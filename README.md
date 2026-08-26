@@ -1,54 +1,57 @@
 # Drop And Grab Overhaul
 
-A Lethal Company mod that allows players to quickly drop multiple items from their inventory with a configurable action.
+A Lethal Company mod that overhauls item dropping, grabbing, and selling: quickly drop or sell your whole inventory, and optionally remove the vanilla item-grab cooldown.
 
 > **Status:** Early development
 
-## Planned Features
+## Features
 
-* Drop all eligible items currently held in the player's hotbar
-* Configurable item exclusions
-* Support for custom hotbars and additional inventory slots
-* Optional double-tap activation using Lethal Company's default drop key
-* Compatibility with HotbarPlus
-* Compatibility with ReservedItemSlot
-* Optional integration with ship inventory chute mods
-* Configurable behavior for reserved items and non-scrap items
+* **Double-tap drop** — tap the drop key (G) twice to drop all eligible items, skipping blacklisted items (including the currently held one)
+* **Force drop** — hold the drop key to drop everything, ignoring the blacklist
+* **Drop blacklist** — configurable list of items that are never dropped by double-tap/force-drop
+* **Auto-sell at the company desk** — hold the drop key while looking at the counter to automatically place all sellable items on it, one at a time
+* **Sell blacklist** — configurable list of items that auto-sell should skip, separate from the drop blacklist
+* **Grab cooldown removal** (optional) — removes the delay between picking up items so you can grab in rapid succession
 
-## Planned Activation Modes
+In all cases, the player's originally selected hotbar slot is restored afterward, even if it ends up empty.
 
-### Dedicated Key
-
-Press a configurable key to drop all eligible items.
+## Activation
 
 ### Double-Tap Drop
 
 Use Lethal Company's normal drop key twice within a configurable time window.
 
-For example:
-
 ```text
 G       → Normal item drop
-G + G   → Drop all eligible items
+G + G   → Drop all eligible items (blacklist respected)
 ```
 
-The goal is to preserve the game's normal drop behavior while providing a quick way to empty the player's inventory.
+### Force Drop
+
+Hold the drop key for a configurable duration to drop everything, including blacklisted items.
+
+### Auto-Sell
+
+While looking at the company desk's counter, hold the drop key to sell all eligible scrap items from your inventory onto the counter.
 
 ## Configuration
 
-Configuration options will be added as development progresses.
-
-Planned options include:
+Config is generated on first run under BepInEx's `config/` folder. Sections and keys:
 
 ```text
-Activation mode
-Activation key
-Double-tap window
-Drop scrap only
-Excluded items
-Drop reserved items
-Drop tools
-Item destination
+[Input]
+DoubleTapWindow          Time window in seconds to detect a double-tap (default: 0.3)
+ForceDropHoldDuration    Hold duration in seconds to force-drop everything (default: 0.5)
+
+[Items]
+BlacklistedItems         Comma-separated item names never dropped by double-tap/force-drop
+
+[Grab]
+RemoveGrabCooldown       Removes the delay between grabbing items (default: false)
+
+[Sell]
+AutoSellInventory        Enables holding the drop key at the counter to auto-sell (default: true)
+SellBlacklistedItems     Comma-separated item names that auto-sell should skip
 ```
 
 ## Compatibility
@@ -72,6 +75,7 @@ This project is built using:
 * C#
 * .NET
 * BepInEx
+* HarmonyX
 * Unity
 * Lethal Company
 
@@ -97,6 +101,16 @@ artifacts/bin/DropAndGrabOverhaul/
 DropAndGrabOverhaul/
 ├── src/
 │   └── DropAndGrabOverhaul/
+│       ├── Compatibility/
+│       ├── Configuration/
+│       │   ├── GrabConfiguration.cs
+│       │   ├── InputConfiguration.cs
+│       │   ├── ItemBlacklist.cs
+│       │   └── SellConfiguration.cs
+│       ├── Input/
+│       │   └── InputHandler.cs
+│       ├── Inventory/
+│       │   └── InventoryAccessor.cs
 │       ├── DropAndGrabOverhaul.csproj
 │       ├── Plugin.cs
 │       └── thunderstore.toml
@@ -109,26 +123,16 @@ DropAndGrabOverhaul/
 └── global.json
 ```
 
-As development progresses, the source will be organized into separate systems for:
-
-* Configuration
-* Input handling
-* Inventory access
-* Item filtering
-* Mod compatibility
-
 ## Development Roadmap
 
 * [x] Create BepInEx plugin project
 * [x] Configure .NET build environment
 * [x] Set up GitHub repository
-* [ ] Verify plugin loads in Lethal Company
-* [ ] Identify vanilla inventory/drop APIs
-* [ ] Implement basic drop-all functionality
-* [ ] Add scrap filtering
-* [ ] Add item exclusions
-* [ ] Add configurable activation modes
-* [ ] Add double-tap drop
+* [x] Verify plugin loads in Lethal Company
+* [x] Implement double-tap drop-all with blacklist support
+* [x] Implement force-drop (hold key, ignores blacklist)
+* [x] Implement auto-sell at the company desk with its own blacklist
+* [x] Implement optional grab cooldown removal
 * [ ] Add HotbarPlus compatibility
 * [ ] Add ReservedItemSlot compatibility
 * [ ] Add ship chute integration
@@ -150,3 +154,4 @@ When reporting a compatibility issue, please include:
 ## License
 
 See [LICENSE](LICENSE) for the project's license.
+
