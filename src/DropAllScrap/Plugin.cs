@@ -1,6 +1,7 @@
 ﻿using BepInEx;
 using BepInEx.Logging;
 using BepInEx.Configuration;
+using System.Collections.Generic;
 using UnityEngine;
 using DropAllScrap.Input;
 using DropAllScrap.Inventory;
@@ -25,14 +26,12 @@ namespace DropAllScrap;
 public partial class Plugin : BaseUnityPlugin
 {
     internal static ManualLogSource Log { get; private set; } = null!;
-    public static ConfigEntry<KeyCode> ActivationKey { get; private set; } = null!;
 
     private void Awake()
     {
         // BepInEx gives us a logger which we can use to log information.
         // See https://lethal.wiki/dev/fundamentals/logging
         Log = Logger;
-        ActivationKey = Config.Bind("General", "ActivationKey", KeyCode.Z, "Key to press to drop all items");
 
         // BepInEx also gives us a config file for easy configuration.
         // See https://lethal.wiki/dev/intermediate/custom-configs
@@ -46,28 +45,78 @@ public partial class Plugin : BaseUnityPlugin
 
     private void Update()
     {
-        // Check if activation key was pressed
-        if (!InputHandler.IsActivationKeyPressed()) return;
+        // Check if drop key was double-tapped
+        if (!InputHandler.IsDoubleTapDrop())
+            return;
 
-        Plugin.Log.LogInfo("Drop all activation triggered");
+        Plugin.Log.LogInfo("Double-tap drop detected - dropping all items");
 
-        // Get all droppable items
-        var itemsToDropList = InventoryAccessor.GetDroppableItems();
-
-        if (itemsToDropList.Count == 0) return;
-
-        // Drop each item
-        int droppedCount = 0;
         PlayerControllerB? player = StartOfRound.Instance?.localPlayerController;
-
-        if (player != null)
+        if (player == null)
         {
-            foreach (GrabbableObject item in itemsToDropList)
+            Plugin.Log.LogWarning("Could not access player");
+            return;
+        }
+
+        if (player.ItemSlots == null || player.ItemSlots.Length == 0)
+        {
+            Plugin.Log.LogInfo("No item slots available");
+            return;
+        }
+
+        // Collect all items to drop (excluding null slots)
+        var itemsToDropList = new List<GrabbableObject>();
+        for (int i = 0; i < player.ItemSlots.Length; i++)
+        {
+            if (player.ItemSlots[i] != null)
             {
-                if (item != null && item.playerHeldBy == player)
+                itemsToDropList.Add(player.ItemSlots[i]);
+            }
+        }
+
+        if (itemsToDropList.Count == 0)
+        {
+            Plugin.Log.LogInfo("No items to drop");
+            return;
+        }
+
+        // Save the current item slot to restore later
+        int originalSlot = player.currentItemSlot;
+
+        // Drop each item by equipping it first, then dropping it
+        int droppedCount = 0;
+        foreach (GrabbableObject item in itemsToDropList)
+        {
+            if (item != null)
+            {
+                // Find the slot index
+                int slotIndex = System.Array.IndexOf(player.ItemSlots, item);
+                if (slotIndex >= 0)
                 {
+                    // Switch to this slot to equip it
+                    player.SwitchToItemSlot(slotIndex);
+                    // Now drop it
                     player.DiscardHeldObject();
                     droppedCount++;
+                    Plugin.Log.LogInfo($"Dropped item: {item.itemProperties.itemName}");
+                }
+            }
+        }
+
+        // Restore the original item slot (or switch to first non-empty slot if original was dropped)
+        if (originalSlot >= 0 && originalSlot < player.ItemSlots.Length && player.ItemSlots[originalSlot] != null)
+        {
+            player.SwitchToItemSlot(originalSlot);
+        }
+        else if (player.ItemSlots != null)
+        {
+            // Find first non-empty slot
+            for (int i = 0; i < player.ItemSlots.Length; i++)
+            {
+                if (player.ItemSlots[i] != null)
+                {
+                    player.SwitchToItemSlot(i);
+                    break;
                 }
             }
         }
