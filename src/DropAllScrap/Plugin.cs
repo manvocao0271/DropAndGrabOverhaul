@@ -122,23 +122,8 @@ public partial class Plugin : BaseUnityPlugin
             }
         }
 
-        // Restore the original item slot (or switch to first non-empty slot if original was dropped)
-        if (originalSlot >= 0 && originalSlot < player.ItemSlots.Length && player.ItemSlots[originalSlot] != null)
-        {
-            player.SwitchToItemSlot(originalSlot);
-        }
-        else if (player.ItemSlots != null)
-        {
-            // Find first non-empty slot
-            for (int i = 0; i < player.ItemSlots.Length; i++)
-            {
-                if (player.ItemSlots[i] != null)
-                {
-                    player.SwitchToItemSlot(i);
-                    break;
-                }
-            }
-        }
+        // Restore the original hotbar slot index, even if it's now empty
+        player.SwitchToItemSlot(originalSlot);
 
         Plugin.Log.LogInfo($"Dropped {droppedCount} items total");
     }
