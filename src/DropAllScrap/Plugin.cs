@@ -40,6 +40,7 @@ public partial class Plugin : BaseUnityPlugin
         // Initialize configurations
         ItemBlacklist.Initialize(Config);
         InputConfiguration.Initialize(Config);
+        GrabConfiguration.Initialize(Config);
 
         // Apply Harmony patch to intercept drop behavior
         harmonyInstance = new Harmony("com.github.manvocao0271.dropallscrap");
@@ -149,5 +150,133 @@ public partial class Plugin : BaseUnityPlugin
         }
 
         return true;
+    }
+
+    // Harmony patch to remove grab cooldown (item use cooldown)
+    [HarmonyPatch(typeof(GrabbableObject), "RequireCooldown")]
+    [HarmonyPrefix]
+    private static bool RequireCooldownPrefix(GrabbableObject __instance, ref bool __result)
+    {
+        // If grab cooldown removal is enabled, skip the cooldown check
+        if (GrabConfiguration.RemoveGrabCooldown)
+        {
+            __result = false; // Return false to allow grab without cooldown
+            return false; // Skip the original method
+        }
+
+        return true; // Allow original method to run
+    }
+
+    // Harmony patch to remove interact trigger cooldown (hover cooldown for grabbables)
+    [HarmonyPatch(typeof(InteractTrigger), "Interact")]
+    [HarmonyPrefix]
+    private static void InteractTriggerInteractPrefix(InteractTrigger __instance)
+    {
+        // If grab cooldown removal is enabled and this trigger is for a grabbable object,
+        // set the cooldown to expired BEFORE the method runs so the cooldown check doesn't block it
+        if (GrabConfiguration.RemoveGrabCooldown)
+        {
+            // Check if this InteractTrigger is part of a GrabbableObject
+            GrabbableObject? grabbable = __instance.GetComponentInParent<GrabbableObject>();
+            if (grabbable != null)
+            {
+                // Set cooldown to expired (negative value means it won't block next grab)
+                // This runs BEFORE the method, so the early return check will fail and let the prompt show
+                __instance.currentCooldownValue = -1f;
+            }
+        }
+    }
+
+    // Harmony postfix to keep the hint showing (reset cooldown immediately after it's set)
+    [HarmonyPatch(typeof(InteractTrigger), "Interact")]
+    [HarmonyPostfix]
+    private static void InteractTriggerInteractPostfix(InteractTrigger __instance)
+    {
+        // If grab cooldown removal is enabled and this trigger is for a grabbable object,
+        // reset the cooldown that was just set so the hint stays visible
+        if (GrabConfiguration.RemoveGrabCooldown)
+        {
+            // Check if this InteractTrigger is part of a GrabbableObject
+            GrabbableObject? grabbable = __instance.GetComponentInParent<GrabbableObject>();
+            if (grabbable != null)
+            {
+                // Keep cooldown expired so hint stays visible and player can grab continuously
+                __instance.currentCooldownValue = -1f;
+            }
+        }
+    }
+
+    // Harmony patch to remove cooldown set by StopSpecialAnimation (for grabbables with animations)
+    [HarmonyPatch(typeof(InteractTrigger), "StopSpecialAnimation")]
+    [HarmonyPostfix]
+    private static void StopSpecialAnimationPostfix(InteractTrigger __instance)
+    {
+        // If grab cooldown removal is enabled and this trigger is for a grabbable object,
+        // override the cooldown that was just set by StopSpecialAnimation
+        if (GrabConfiguration.RemoveGrabCooldown)
+        {
+            // Check if this InteractTrigger is part of a GrabbableObject
+            GrabbableObject? grabbable = __instance.GetComponentInParent<GrabbableObject>();
+            if (grabbable != null)
+            {
+                // Set cooldown to expired (negative value means it won't block next grab)
+                __instance.currentCooldownValue = -1f;
+            }
+        }
+    }
+
+    // Harmony patch to remove cooldown set by OnEnable (when new item enters hover range)
+    [HarmonyPatch(typeof(InteractTrigger), "OnEnable")]
+    [HarmonyPostfix]
+    private static void OnEnablePostfix(InteractTrigger __instance)
+    {
+        // If grab cooldown removal is enabled and this trigger is for a grabbable object,
+        // override the cooldown that was just set by OnEnable
+        if (GrabConfiguration.RemoveGrabCooldown)
+        {
+            // Check if this InteractTrigger is part of a GrabbableObject
+            GrabbableObject? grabbable = __instance.GetComponentInParent<GrabbableObject>();
+            if (grabbable != null)
+            {
+                // Set cooldown to expired (negative value means it won't block next grab)
+                __instance.currentCooldownValue = -1f;
+            }
+        }
+    }
+
+    // Harmony patch to clear the grab animation lock that blocks the hover tip and next grab
+    [HarmonyPatch(typeof(PlayerControllerB), "BeginGrabObject")]
+    [HarmonyPostfix]
+    private static void BeginGrabObjectPostfix(PlayerControllerB __instance)
+    {
+        if (GrabConfiguration.RemoveGrabCooldown)
+        {
+            // isGrabbingObjectAnimation gates SetHoverTipAndCurrentInteractTrigger(); clearing it
+            // immediately lets the hover tip and next grab become available right away
+            __instance.isGrabbingObjectAnimation = false;
+        }
+    }
+
+    // Harmony patch to re-assert the grab hint if the game blanked it (animation lock/linecast obstruction)
+    [HarmonyPatch(typeof(PlayerControllerB), "SetHoverTipAndCurrentInteractTrigger")]
+    [HarmonyPostfix]
+    private static void SetHoverTipAndCurrentInteractTriggerPostfix(PlayerControllerB __instance)
+    {
+        if (!GrabConfiguration.RemoveGrabCooldown || !string.IsNullOrEmpty(__instance.cursorTip.text))
+            return;
+
+        Ray ray = new Ray(__instance.gameplayCamera.transform.position, __instance.gameplayCamera.transform.forward);
+        if (Physics.Raycast(ray, out RaycastHit rayHit, __instance.grabDistance, __instance.interactableObjectsMask)
+            && rayHit.collider.gameObject.layer != 8 && rayHit.collider.gameObject.layer != 30
+            && rayHit.collider.CompareTag("PhysicsProp"))
+        {
+            GrabbableObject? grabbable = rayHit.collider.gameObject.GetComponent<GrabbableObject>();
+            if (grabbable != null && !grabbable.isHeld && !grabbable.isPocketed)
+            {
+                __instance.cursorTip.text = "Grab : [E]";
+                __instance.cursorIcon.enabled = true;
+                __instance.cursorIcon.sprite = __instance.grabItemIcon;
+            }
+        }
     }
 }
