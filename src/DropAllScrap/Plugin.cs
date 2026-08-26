@@ -3,10 +3,12 @@ using BepInEx.Logging;
 using BepInEx.Configuration;
 using System.Collections.Generic;
 using UnityEngine;
+using HarmonyLib;
 using DropAllScrap.Input;
 using DropAllScrap.Inventory;
 using DropAllScrap.Configuration;
 using GameNetcodeStuff;
+using UnityEngine.InputSystem;
 
 namespace DropAllScrap;
 
@@ -27,6 +29,7 @@ namespace DropAllScrap;
 public partial class Plugin : BaseUnityPlugin
 {
     internal static ManualLogSource Log { get; private set; } = null!;
+    private static Harmony? harmonyInstance;
 
     private void Awake()
     {
@@ -37,6 +40,10 @@ public partial class Plugin : BaseUnityPlugin
         // Initialize configurations
         ItemBlacklist.Initialize(Config);
         InputConfiguration.Initialize(Config);
+
+        // Apply Harmony patch to intercept drop behavior
+        harmonyInstance = new Harmony("com.github.manvocao0271.dropallscrap");
+        harmonyInstance.PatchAll();
 
         // BepInEx also gives us a config file for easy configuration.
         // See https://lethal.wiki/dev/intermediate/custom-configs
@@ -101,6 +108,12 @@ public partial class Plugin : BaseUnityPlugin
             {
                 string itemName = item.itemProperties.itemName;
 
+                // Find the slot index
+                int slotIndex = System.Array.IndexOf(player.ItemSlots, item);
+
+                // During double-tap, don't drop the currently held blacklisted item
+                if (!isForceDropping && slotIndex == player.currentItemSlot && ItemBlacklist.IsBlacklisted(itemName)) continue;
+
                 // Check if item is blacklisted (unless force dropping)
                 if (!isForceDropping && ItemBlacklist.IsBlacklisted(itemName))
                 {
@@ -108,17 +121,12 @@ public partial class Plugin : BaseUnityPlugin
                     continue;
                 }
 
-                // Find the slot index
-                int slotIndex = System.Array.IndexOf(player.ItemSlots, item);
-                if (slotIndex >= 0)
-                {
-                    // Switch to this slot to equip it
-                    player.SwitchToItemSlot(slotIndex);
-                    // Now drop it
-                    player.DiscardHeldObject();
-                    droppedCount++;
-                    Plugin.Log.LogInfo($"Dropped item: {itemName}");
-                }
+                // Switch to this slot to equip it
+                player.SwitchToItemSlot(slotIndex);
+                // Now drop it
+                player.DiscardHeldObject();
+                droppedCount++;
+                Plugin.Log.LogInfo($"Dropped item: {itemName}");
             }
         }
 
@@ -126,5 +134,20 @@ public partial class Plugin : BaseUnityPlugin
         player.SwitchToItemSlot(originalSlot);
 
         Plugin.Log.LogInfo($"Dropped {droppedCount} items total");
+    }
+
+    // Harmony patch to intercept the game's default drop call
+    [HarmonyPatch(typeof(PlayerControllerB), "DiscardHeldObject")]
+    [HarmonyPrefix]
+    private static bool DiscardHeldObjectPrefix(PlayerControllerB __instance)
+    {
+        // Supress ALL drops triggered by the G key (single-tap, double-tap, or hold)
+        // Let the Update() method handle all drop logic with proper blacklist checks
+        if (Keyboard.current != null && Keyboard.current[Key.G].wasPressedThisFrame)
+        {
+            return false;
+        }
+
+        return true;
     }
 }
