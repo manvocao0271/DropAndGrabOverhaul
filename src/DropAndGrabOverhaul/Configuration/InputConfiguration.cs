@@ -16,7 +16,7 @@ namespace DropAndGrabOverhaul.Configuration
             doubleTapWindowConfig = config.Bind(
                 section: "Input",
                 key: "DoubleTapWindow",
-                defaultValue: 0.3f,
+                defaultValue: 0.2f,
                 description: "Time window in seconds to detect double-tap on drop key."
             );
 

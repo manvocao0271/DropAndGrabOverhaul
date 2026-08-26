@@ -13,8 +13,8 @@ namespace DropAndGrabOverhaul.Configuration
             removeGrabCooldownConfig = config.Bind(
                 section: "Grab",
                 key: "RemoveGrabCooldown",
-                defaultValue: false,
-                description: "If true, removes the cooldown delay between grabbing items from the ground."
+                defaultValue: true,
+                description: "Removes the cooldown delay between grabbing items from the ground."
             );
 
             RemoveGrabCooldown = removeGrabCooldownConfig.Value;
