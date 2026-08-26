@@ -1,31 +1,152 @@
-# DropAllScrap
+# Drop All Scrap
 
-Describe your project here!
+A Lethal Company mod that allows players to quickly drop multiple items from their inventory with a configurable action.
 
-## Template Instructions
+> **Status:** Early development
 
-You can remove this section after you've set up your project.
+## Planned Features
 
-Next steps:
+* Drop all eligible items currently held in the player's hotbar
+* Configurable item exclusions
+* Support for custom hotbars and additional inventory slots
+* Optional double-tap activation using Lethal Company's default drop key
+* Compatibility with HotbarPlus
+* Compatibility with ReservedItemSlot
+* Optional integration with ship inventory chute mods
+* Configurable behavior for reserved items and non-scrap items
 
-- Create a copy of the `Config.Build.user.props.template` file and name it `Config.Build.user.props`
-  - This will automate copying your plugin assembly to `BepInEx/plugins/`
-  - Configure the paths to point to your game path and your `BepInEx/plugins/`
-  - Game assembly references should work if the path to the game is valid
-- Search `TODO` in the whole project to see what you should configure or modify
+## Planned Activation Modes
 
-### Thunderstore Packaging
+### Dedicated Key
 
-This template comes with Thunderstore packaging built-in, using [TCLI](<https://github.com/thunderstore-io/thunderstore-cli>).
+Press a configurable key to drop all eligible items.
 
-You can build Thunderstore packages by building with release configuration:
+### Double-Tap Drop
 
-```sh
-dotnet build -c Release -v d
+Use Lethal Company's normal drop key twice within a configurable time window.
+
+For example:
+
+```text
+G       → Normal item drop
+G + G   → Drop all eligible items
 ```
 
-> [!NOTE]  
-> You can learn about different build options with `dotnet build --help`.  
-> `-c` is short for `--configuration` and `-v d` is `--verbosity detailed`.
+The goal is to preserve the game's normal drop behavior while providing a quick way to empty the player's inventory.
 
-The built package will be found at `./artifacts/thunderstore/`.
+## Configuration
+
+Configuration options will be added as development progresses.
+
+Planned options include:
+
+```text
+Activation mode
+Activation key
+Double-tap window
+Drop scrap only
+Excluded items
+Drop reserved items
+Drop tools
+Item destination
+```
+
+## Compatibility
+
+DropAllScrap is being designed with compatibility in mind.
+
+The inventory system will use an abstraction layer so that the core drop logic does not depend directly on a specific hotbar or inventory implementation.
+
+Planned integrations include:
+
+* HotbarPlus
+* ReservedItemSlot
+* Ship inventory chute mods
+
+Optional integrations will not be required for the base mod to function.
+
+## Development
+
+This project is built using:
+
+* C#
+* .NET
+* BepInEx
+* Unity
+* Lethal Company
+
+### Building
+
+Clone the repository and build the project:
+
+```bash
+git clone https://github.com/manvocao0271/DropAllScrap.git
+cd DropAllScrap
+dotnet build
+```
+
+The compiled plugin is generated under:
+
+```text
+artifacts/bin/DropAllScrap/
+```
+
+## Project Structure
+
+```text
+DropAllScrap/
+├── src/
+│   └── DropAllScrap/
+│       ├── DropAllScrap.csproj
+│       ├── Plugin.cs
+│       └── thunderstore.toml
+├── CHANGELOG.md
+├── Directory.Build.props
+├── Directory.Build.targets
+├── DropAllScrap.slnx
+├── LICENSE
+├── README.md
+└── global.json
+```
+
+As development progresses, the source will be organized into separate systems for:
+
+* Configuration
+* Input handling
+* Inventory access
+* Item filtering
+* Mod compatibility
+
+## Development Roadmap
+
+* [x] Create BepInEx plugin project
+* [x] Configure .NET build environment
+* [x] Set up GitHub repository
+* [ ] Verify plugin loads in Lethal Company
+* [ ] Identify vanilla inventory/drop APIs
+* [ ] Implement basic drop-all functionality
+* [ ] Add scrap filtering
+* [ ] Add item exclusions
+* [ ] Add configurable activation modes
+* [ ] Add double-tap drop
+* [ ] Add HotbarPlus compatibility
+* [ ] Add ReservedItemSlot compatibility
+* [ ] Add ship chute integration
+* [ ] Package for Thunderstore
+* [ ] Publish initial release
+
+## Contributing
+
+Issues, suggestions, and pull requests are welcome.
+
+When reporting a compatibility issue, please include:
+
+* Lethal Company version
+* DropAllScrap version
+* BepInEx version
+* Other inventory/hotbar mods installed
+* BepInEx log output relevant to the issue
+
+## License
+
+See [LICENSE](LICENSE) for the project's license.
