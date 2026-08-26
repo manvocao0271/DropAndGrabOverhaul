@@ -5,10 +5,10 @@ schemaVersion = "0.0.1"
 repository = "https://thunderstore.io"
 
 [package]
-namespace = "TODO: Fill in your Thunderstore team name here"
+namespace = "bobabulkerENTERPRISE"
 name = "DropAndGrabOverhaul"
-description = "TODO: Fill in short mod description."
-websiteUrl = "" # TODO: Add a link to your mod repository here (optional)
+description = "Drop all items with one key, remove grab cooldown, and auto-sell scrap at the company desk. Fully configurable blacklists for both dropping and selling."
+websiteUrl = "https://github.com/manvocao0271/DropAndGrabOverhaul"
 containsNsfwContent = false
 
 [package.dependencies]
