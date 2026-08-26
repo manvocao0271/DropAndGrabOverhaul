@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using DropAllScrap.Input;
 using DropAllScrap.Inventory;
+using DropAllScrap.Configuration;
 using GameNetcodeStuff;
 
 namespace DropAllScrap;
@@ -32,6 +33,10 @@ public partial class Plugin : BaseUnityPlugin
         // BepInEx gives us a logger which we can use to log information.
         // See https://lethal.wiki/dev/fundamentals/logging
         Log = Logger;
+
+        // Initialize configurations
+        ItemBlacklist.Initialize(Config);
+        InputConfiguration.Initialize(Config);
 
         // BepInEx also gives us a config file for easy configuration.
         // See https://lethal.wiki/dev/intermediate/custom-configs
@@ -89,6 +94,15 @@ public partial class Plugin : BaseUnityPlugin
         {
             if (item != null)
             {
+                string itemName = item.itemProperties.itemName;
+
+                // Check if item is blacklisted
+                if (ItemBlacklist.IsBlacklisted(itemName))
+                {
+                    Plugin.Log.LogInfo($"Skipping blacklisted item: {itemName}");
+                    continue;
+                }
+
                 // Find the slot index
                 int slotIndex = System.Array.IndexOf(player.ItemSlots, item);
                 if (slotIndex >= 0)
@@ -98,7 +112,7 @@ public partial class Plugin : BaseUnityPlugin
                     // Now drop it
                     player.DiscardHeldObject();
                     droppedCount++;
-                    Plugin.Log.LogInfo($"Dropped item: {item.itemProperties.itemName}");
+                    Plugin.Log.LogInfo($"Dropped item: {itemName}");
                 }
             }
         }

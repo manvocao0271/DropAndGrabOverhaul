@@ -1,4 +1,5 @@
 using UnityEngine.InputSystem;
+using DropAllScrap.Configuration;
 
 namespace DropAllScrap.Input
 {
@@ -6,12 +7,13 @@ namespace DropAllScrap.Input
     {
         private static float lastDropKeyPressTime = -999f;
         private static int dropKeyPressCount = 0;
-        private const float DOUBLE_TAP_WINDOW = 0.3f; // Window to detect double-tap (in seconds)
 
         public static bool IsDoubleTapDrop()
         {
             if (Keyboard.current == null)
                 return false;
+
+            float doubleTapWindow = InputConfiguration.DoubleTapWindow;
 
             // Detect the drop key (G by default in Lethal Company)
             Key dropKey = Key.G;
@@ -21,7 +23,7 @@ namespace DropAllScrap.Input
                 float timeSinceLastPress = UnityEngine.Time.time - lastDropKeyPressTime;
 
                 // Check if within double-tap window
-                if (timeSinceLastPress < DOUBLE_TAP_WINDOW)
+                if (timeSinceLastPress < doubleTapWindow)
                 {
                     // Second tap within window - this is a double-tap!
                     dropKeyPressCount++;
@@ -42,7 +44,7 @@ namespace DropAllScrap.Input
             }
 
             // Reset counter if window expires
-            if (UnityEngine.Time.time - lastDropKeyPressTime > DOUBLE_TAP_WINDOW)
+            if (UnityEngine.Time.time - lastDropKeyPressTime > doubleTapWindow)
             {
                 dropKeyPressCount = 0;
             }
