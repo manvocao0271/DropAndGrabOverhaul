@@ -85,5 +85,11 @@ namespace DropAllScrap.Input
 
             return false;
         }
+
+        public static bool IsDropKeyPressed()
+        {
+            if (Keyboard.current == null) return false;
+            return Keyboard.current[Key.G].isPressed;
+        }
     }
 }

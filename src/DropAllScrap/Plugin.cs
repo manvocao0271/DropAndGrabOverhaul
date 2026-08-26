@@ -1,6 +1,7 @@
 ﻿using BepInEx;
 using BepInEx.Logging;
 using BepInEx.Configuration;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using HarmonyLib;
@@ -30,6 +31,8 @@ public partial class Plugin : BaseUnityPlugin
 {
     internal static ManualLogSource Log { get; private set; } = null!;
     private static Harmony? harmonyInstance;
+    private static Coroutine? autoSellCoroutine;
+    private static bool isPlacingOnCounter;
 
     private void Awake()
     {
@@ -41,6 +44,7 @@ public partial class Plugin : BaseUnityPlugin
         ItemBlacklist.Initialize(Config);
         InputConfiguration.Initialize(Config);
         GrabConfiguration.Initialize(Config);
+        SellConfiguration.Initialize(Config);
 
         // Apply Harmony patch to intercept drop behavior
         harmonyInstance = new Harmony("com.github.manvocao0271.dropallscrap");
@@ -58,6 +62,29 @@ public partial class Plugin : BaseUnityPlugin
 
     private void Update()
     {
+        PlayerControllerB? player = StartOfRound.Instance?.localPlayerController;
+        if (player == null)
+            return;
+
+        // Check if player is looking at the company desk's interact trigger (same condition
+        // the vanilla game uses to show the "Sell item : [E]" hover tip)
+        DepositItemsDesk? desk = UnityEngine.Object.FindObjectOfType<DepositItemsDesk>();
+        bool atDesk = desk != null && desk.triggerScript != null && player.hoveringOverTrigger == desk.triggerScript;
+
+        // Auto-sell inventory if enabled and drop key is held near the counter
+        if (SellConfiguration.AutoSellInventory && atDesk && InputHandler.IsDropKeyPressed() && desk != null)
+        {
+            // Only start the coroutine if one isn't already running, otherwise it never
+            // gets past the first item's delay before being killed and restarted
+            if (autoSellCoroutine == null)
+                autoSellCoroutine = StartCoroutine(AutoSellInventoryCoroutine(player, desk));
+            return;
+        }
+
+        // Don't allow drop-all actions if player is at desk and auto-sell is enabled
+        if (atDesk && SellConfiguration.AutoSellInventory)
+            return;
+
         // Check for force drop (holding key) first
         bool isForceDropping = InputHandler.IsForceDropHeld();
         
@@ -68,13 +95,6 @@ public partial class Plugin : BaseUnityPlugin
             return;
 
         Plugin.Log.LogInfo(isForceDropping ? "Force drop detected - dropping ALL items (ignoring blacklist)" : "Double-tap drop detected - dropping all items");
-
-        PlayerControllerB? player = StartOfRound.Instance?.localPlayerController;
-        if (player == null)
-        {
-            Plugin.Log.LogWarning("Could not access player");
-            return;
-        }
 
         if (player.ItemSlots == null || player.ItemSlots.Length == 0)
         {
@@ -137,11 +157,45 @@ public partial class Plugin : BaseUnityPlugin
         Plugin.Log.LogInfo($"Dropped {droppedCount} items total");
     }
 
+    private System.Collections.IEnumerator AutoSellInventoryCoroutine(PlayerControllerB player, DepositItemsDesk desk)
+    {
+        int soldCount = 0;
+        for (int i = 0; i < player.ItemSlots.Length; i++)
+        {
+            if (player.ItemSlots[i] != null && player.ItemSlots[i].itemProperties.isScrap)
+            {
+                string itemName = player.ItemSlots[i].itemProperties.itemName;
+
+                if (SellConfiguration.IsSellBlacklisted(itemName))
+                {
+                    Plugin.Log.LogInfo($"Skipping sell-blacklisted item: {itemName}");
+                    continue;
+                }
+
+                player.SwitchToItemSlot(i);
+                // Suppress the drop-key patch from swallowing this call if it lands on a G press frame
+                isPlacingOnCounter = true;
+                desk.PlaceItemOnCounter(player);
+                isPlacingOnCounter = false;
+                soldCount++;
+                Plugin.Log.LogInfo($"Sold item: {itemName}");
+                // Wait for the grab animation to complete before selling the next item
+                yield return new WaitForSeconds(0.2f);
+            }
+        }
+        Plugin.Log.LogInfo($"Sold {soldCount} items total");
+        autoSellCoroutine = null;
+    }
+
     // Harmony patch to intercept the game's default drop call
     [HarmonyPatch(typeof(PlayerControllerB), "DiscardHeldObject")]
     [HarmonyPrefix]
     private static bool DiscardHeldObjectPrefix(PlayerControllerB __instance)
     {
+        // Never suppress our own sell-placement call to the desk counter
+        if (isPlacingOnCounter)
+            return true;
+
         // Supress ALL drops triggered by the G key (single-tap, double-tap, or hold)
         // Let the Update() method handle all drop logic with proper blacklist checks
         if (Keyboard.current != null && Keyboard.current[Key.G].wasPressedThisFrame)
