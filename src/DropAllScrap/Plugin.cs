@@ -50,11 +50,16 @@ public partial class Plugin : BaseUnityPlugin
 
     private void Update()
     {
-        // Check if drop key was double-tapped
-        if (!InputHandler.IsDoubleTapDrop())
+        // Check for force drop (holding key) first
+        bool isForceDropping = InputHandler.IsForceDropHeld();
+        
+        // Check if drop key was double-tapped (only if not force dropping)
+        bool isDoubleTap = !isForceDropping && InputHandler.IsDoubleTapDrop();
+
+        if (!isForceDropping && !isDoubleTap)
             return;
 
-        Plugin.Log.LogInfo("Double-tap drop detected - dropping all items");
+        Plugin.Log.LogInfo(isForceDropping ? "Force drop detected - dropping ALL items (ignoring blacklist)" : "Double-tap drop detected - dropping all items");
 
         PlayerControllerB? player = StartOfRound.Instance?.localPlayerController;
         if (player == null)
@@ -96,8 +101,8 @@ public partial class Plugin : BaseUnityPlugin
             {
                 string itemName = item.itemProperties.itemName;
 
-                // Check if item is blacklisted
-                if (ItemBlacklist.IsBlacklisted(itemName))
+                // Check if item is blacklisted (unless force dropping)
+                if (!isForceDropping && ItemBlacklist.IsBlacklisted(itemName))
                 {
                     Plugin.Log.LogInfo($"Skipping blacklisted item: {itemName}");
                     continue;

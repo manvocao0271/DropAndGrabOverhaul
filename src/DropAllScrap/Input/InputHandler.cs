@@ -1,11 +1,13 @@
 using UnityEngine.InputSystem;
 using DropAllScrap.Configuration;
+using System.Runtime.CompilerServices;
 
 namespace DropAllScrap.Input
 {
     public static class InputHandler
     {
         private static float lastDropKeyPressTime = -999f;
+        private static float dropKeyHoldStartTime = -999f;
         private static int dropKeyPressCount = 0;
 
         public static bool IsDoubleTapDrop()
@@ -47,6 +49,38 @@ namespace DropAllScrap.Input
             if (UnityEngine.Time.time - lastDropKeyPressTime > doubleTapWindow)
             {
                 dropKeyPressCount = 0;
+            }
+
+            return false;
+        }
+
+        public static bool IsForceDropHeld()
+        {
+            if (Keyboard.current == null) return false;
+
+            Key dropKey = Key.G;
+            float forceDropDuration = InputConfiguration.ForceDropHoldDuration;
+
+            // Check if drop key is currently held
+            if (Keyboard.current[dropKey].isPressed)
+            {
+                // If just pressed, record the time
+                if (dropKeyHoldStartTime < 0)
+                {
+                    dropKeyHoldStartTime = UnityEngine.Time.time;
+                }
+
+                // Check if held long enough
+                float holdDuration = UnityEngine.Time.time - dropKeyHoldStartTime;
+                if (holdDuration >= forceDropDuration)
+                {
+                    return true;
+                }
+            }
+            else
+            {
+                // Key released, reset
+                dropKeyHoldStartTime = -999f;
             }
 
             return false;
