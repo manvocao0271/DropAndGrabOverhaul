@@ -1,4 +1,4 @@
-# Drop All Scrap
+# Drop And Grab Overhaul
 
 A Lethal Company mod that allows players to quickly drop multiple items from their inventory with a configurable action.
 
@@ -53,7 +53,7 @@ Item destination
 
 ## Compatibility
 
-DropAllScrap is being designed with compatibility in mind.
+DropAndGrabOverhaul is being designed with compatibility in mind.
 
 The inventory system will use an abstraction layer so that the core drop logic does not depend directly on a specific hotbar or inventory implementation.
 
@@ -80,30 +80,30 @@ This project is built using:
 Clone the repository and build the project:
 
 ```bash
-git clone https://github.com/manvocao0271/DropAllScrap.git
-cd DropAllScrap
+git clone https://github.com/manvocao0271/DropAndGrabOverhaul.git
+cd DropAndGrabOverhaul
 dotnet build
 ```
 
 The compiled plugin is generated under:
 
 ```text
-artifacts/bin/DropAllScrap/
+artifacts/bin/DropAndGrabOverhaul/
 ```
 
 ## Project Structure
 
 ```text
-DropAllScrap/
+DropAndGrabOverhaul/
 ├── src/
-│   └── DropAllScrap/
-│       ├── DropAllScrap.csproj
+│   └── DropAndGrabOverhaul/
+│       ├── DropAndGrabOverhaul.csproj
 │       ├── Plugin.cs
 │       └── thunderstore.toml
 ├── CHANGELOG.md
 ├── Directory.Build.props
 ├── Directory.Build.targets
-├── DropAllScrap.slnx
+├── DropAndGrabOverhaul.slnx
 ├── LICENSE
 ├── README.md
 └── global.json
@@ -142,7 +142,7 @@ Issues, suggestions, and pull requests are welcome.
 When reporting a compatibility issue, please include:
 
 * Lethal Company version
-* DropAllScrap version
+* DropAndGrabOverhaul version
 * BepInEx version
 * Other inventory/hotbar mods installed
 * BepInEx log output relevant to the issue

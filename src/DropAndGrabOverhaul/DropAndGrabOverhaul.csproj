@@ -3,9 +3,9 @@
     <!-- This is the most appropriate target framework for the game's Unity version. -->
     <TargetFramework>netstandard2.1</TargetFramework>
     <!-- This is the GUID of your mod. Example: com.github.YourAccount.BepInExTemplate -->
-    <AssemblyName>com.github.manvocao0271.dropallscrap</AssemblyName>
+    <AssemblyName>com.github.manvocao0271.dropandgraboverhaul</AssemblyName>
     <!-- This is the display name of your mod. Example: BepInEx Template -->
-    <AssemblyTitle>DropAllScrap</AssemblyTitle>
+    <AssemblyTitle>DropAndGrabOverhaul</AssemblyTitle>
     <!-- This is the version number of your mod. -->
     <Version>0.1.0</Version>
   </PropertyGroup>

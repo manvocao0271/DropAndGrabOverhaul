@@ -5,13 +5,13 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using HarmonyLib;
-using DropAllScrap.Input;
-using DropAllScrap.Inventory;
-using DropAllScrap.Configuration;
+using DropAndGrabOverhaul.Input;
+using DropAndGrabOverhaul.Inventory;
+using DropAndGrabOverhaul.Configuration;
 using GameNetcodeStuff;
 using UnityEngine.InputSystem;
 
-namespace DropAllScrap;
+namespace DropAndGrabOverhaul;
 
 // Here are some basic resources on code style and naming conventions to help
 // you in your first CSharp plugin!
@@ -24,7 +24,7 @@ namespace DropAllScrap;
 // For more info, see https://github.com/Hamunii/BepInEx.AutoPlugin
 
 /// <summary>
-/// The BepInEx plugin class of DropAllScrap.
+/// The BepInEx plugin class of DropAndGrabOverhaul.
 /// </summary>
 [BepInAutoPlugin]
 public partial class Plugin : BaseUnityPlugin
@@ -47,7 +47,7 @@ public partial class Plugin : BaseUnityPlugin
         SellConfiguration.Initialize(Config);
 
         // Apply Harmony patch to intercept drop behavior
-        harmonyInstance = new Harmony("com.github.manvocao0271.dropallscrap");
+        harmonyInstance = new Harmony("com.github.manvocao0271.dropandgraboverhaul");
         harmonyInstance.PatchAll();
 
         // BepInEx also gives us a config file for easy configuration.

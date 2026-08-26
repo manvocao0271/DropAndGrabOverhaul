@@ -6,7 +6,7 @@ repository = "https://thunderstore.io"
 
 [package]
 namespace = "TODO: Fill in your Thunderstore team name here"
-name = "DropAllScrap"
+name = "DropAndGrabOverhaul"
 description = "TODO: Fill in short mod description."
 websiteUrl = "" # TODO: Add a link to your mod repository here (optional)
 containsNsfwContent = false
@@ -20,7 +20,7 @@ readme = "../../README.md"
 outdir = "../../artifacts/thunderstore/"
 
 [[build.copy]]
-source = "../../artifacts/bin/DropAllScrap/release/com.github.manvocao0271.dropallscrap.dll"
+source = "../../artifacts/bin/DropAndGrabOverhaul/release/com.github.manvocao0271.dropandgraboverhaul.dll"
 target = "plugins/"
 
 [[build.copy]]
