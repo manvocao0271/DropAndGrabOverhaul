@@ -8,7 +8,7 @@ repository = "https://thunderstore.io"
 namespace = "bobabulkerENTERPRISE"
 name = "DropAndGrabOverhaul"
 versionNumber = "0.1.2"
-description = "Drop all items by double tapping and put all scrap in inventory on sell counter at once by holding drop key. Remove grab item cooldown."
+description = "[BETA - multiplayer drop-sync fix unverified] Drop all items by double tapping and put all scrap in inventory on sell counter at once by holding drop key. Remove grab item cooldown."
 websiteUrl = "https://github.com/manvocao0271/DropAndGrabOverhaul"
 containsNsfwContent = false
 
