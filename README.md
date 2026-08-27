@@ -6,12 +6,12 @@ A Lethal Company mod that overhauls item dropping, grabbing, and selling: quickl
 
 ## Features
 
-* **Double-tap drop** — tap the drop key (G) twice to drop all eligible items, skipping blacklisted items (including the currently held one)
+* **Double-tap drop** — tap the drop key (G) to drop the held item immediately; tap again within the window to also drop the rest of your eligible items, skipping blacklisted ones
 * **Force drop** — hold the drop key to drop everything, ignoring the blacklist
 * **Drop blacklist** — configurable list of items that are never dropped by double-tap/force-drop
 * **Auto-sell at the company desk** — hold the drop key while looking at the counter to automatically place all sellable items on it, one at a time
 * **Sell blacklist** — configurable list of items that auto-sell should skip, separate from the drop blacklist
-* **Grab cooldown removal** (optional) — removes the delay between picking up items so you can grab in rapid succession
+* **Configurable grab delay** — lower the delay between picking up items (down to 0.01s) so you can grab in rapid succession
 
 In all cases, the player's originally selected hotbar slot is restored afterward, even if it ends up empty.
 
@@ -19,11 +19,13 @@ In all cases, the player's originally selected hotbar slot is restored afterward
 
 ### Double-Tap Drop
 
-Use Lethal Company's normal drop key twice within a configurable time window.
+Use Lethal Company's normal drop key twice within a configurable time window. The first tap
+drops whatever you're holding immediately (blacklist doesn't apply to it, same as a vanilla
+drop); a second tap within the window drops the rest of your eligible items too.
 
 ```text
-G       → Normal item drop
-G + G   → Drop all eligible items (blacklist respected)
+G       → Drop the held item immediately
+G + G   → Also drop the rest of your eligible items (blacklist respected)
 ```
 
 ### Force Drop
@@ -40,14 +42,14 @@ Config is generated on first run under BepInEx's `config/` folder. Sections and 
 
 ```text
 [Input]
-DoubleTapWindow          Time window in seconds to detect a double-tap (default: 0.3)
+DoubleTapWindow          Time window in seconds to detect a double-tap (default: 0.2)
 ForceDropHoldDuration    Hold duration in seconds to force-drop everything (default: 0.5)
 
 [Items]
 BlacklistedItems         Comma-separated item names never dropped by double-tap/force-drop
 
 [Grab]
-RemoveGrabCooldown       Removes the delay between grabbing items (default: false)
+GrabDelay                Delay in seconds between grabbing items, vanilla is 0.2 (default: 0.01)
 
 [Sell]
 AutoSellInventory        Enables holding the drop key at the counter to auto-sell (default: true)
