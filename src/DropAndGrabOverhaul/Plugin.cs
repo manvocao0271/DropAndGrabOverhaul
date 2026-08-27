@@ -120,6 +120,11 @@ public partial class Plugin : BaseUnityPlugin
             return;
         }
 
+        // NOTE: we intentionally don't use the vanilla PlayerControllerB.DropAllHeldItemsAndSync
+        // here (the method KillPlayer uses to drop everything on death). It also drops
+        // ItemOnlySlot - the utility "tab" slot item (walkie-talkie, compass, etc.) - with no
+        // way to exclude it, so using it would toss that item too. Looping player.ItemSlots
+        // ourselves naturally leaves ItemOnlySlot untouched.
         // Only start the coroutine if one isn't already running, otherwise it never
         // gets past the first item's delay before being killed and restarted
         if (dropAllCoroutine == null)
@@ -142,10 +147,7 @@ public partial class Plugin : BaseUnityPlugin
                 // Find the slot index
                 int slotIndex = System.Array.IndexOf(player.ItemSlots, item);
 
-                // During double-tap, don't drop the currently held blacklisted item
-                if (!isForceDropping && slotIndex == player.currentItemSlot && ItemBlacklist.IsBlacklisted(itemName)) continue;
-
-                // Check if item is blacklisted (unless force dropping)
+                // Blacklist only applies to the double-tap drop; force drop ignores it
                 if (!isForceDropping && ItemBlacklist.IsBlacklisted(itemName))
                 {
                     Plugin.Log.LogInfo($"Skipping blacklisted item: {itemName}");
