@@ -199,14 +199,24 @@ public partial class Plugin : BaseUnityPlugin
 
                 // currentlyHeldObjectServer is only cleared once the ThrowObjectClientRpc echo
                 // arrives back on this client. Switching slots before that lands makes
-                // SwitchToItemSlot call PocketItem() on the item we just dropped (since it's
-                // still the "held" reference), which re-hides its mesh renderers locally even
-                // though the drop is already synced correctly for everyone else. Wait for the
-                // reference to actually clear, with a timeout so a dropped RPC can't hang us.
+                // SwitchToItemSlot overwrite the reference while the throw is still in flight -
+                // the delayed echo then finds a mismatched currentlyHeldObjectServer and the
+                // vanilla ThrowObjectClientRpc safety check logs "not the same as
+                // currentlyHeldObjectServer" and skips clearing it, leaving the item stuck
+                // invisible/undropped for everyone. Wait for the reference to actually clear,
+                // with a timeout so a dropped RPC can't hang us - but if it does time out (e.g.
+                // a laggy host), stop here instead of switching slots anyway, so the still-
+                // in-flight echo can still land on a matching reference later.
                 float waitStart = UnityEngine.Time.time;
                 while (player.currentlyHeldObjectServer != null && UnityEngine.Time.time - waitStart < 2f)
                 {
                     yield return null;
+                }
+
+                if (player.currentlyHeldObjectServer != null)
+                {
+                    Plugin.Log.LogWarning($"Timed out waiting for '{itemName}' to finish dropping over the network - stopping drop-all early to avoid desyncing the rest.");
+                    break;
                 }
             }
         }
