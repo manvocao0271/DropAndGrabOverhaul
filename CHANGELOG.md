@@ -3,6 +3,12 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.1.4] - 2026-08-27
+
+### Changed
+
+- A plain tap of the drop key now drops the held item immediately instead of after a deferred wait, eliminating the ~0.2-0.3s of added latency on every drop. A second tap within the double-tap window drops the rest of your eligible items instead of upgrading a still-pending single drop. As a tradeoff, the blacklist can no longer exempt the currently-held item specifically in a double-tap - it's already gone by the time the second tap registers, the same as it would be for a lone tap.
+
 ## [0.1.3] - 2026-08-27
 
 ### Fixed

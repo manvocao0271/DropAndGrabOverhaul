@@ -36,7 +36,6 @@ public partial class Plugin : BaseUnityPlugin
     private static UpdateRunner? runner;
     private static Coroutine? autoSellCoroutine;
     private static Coroutine? dropAllCoroutine;
-    private static Coroutine? pendingSingleDropCoroutine;
     private static bool isPlacingOnCounter;
     private static bool isDroppingAll;
 
@@ -74,35 +73,10 @@ public partial class Plugin : BaseUnityPlugin
         Log.LogInfo($"Plugin {Name} is loaded!");
     }
 
-    private void Start()
-    {
-        Plugin.Log.LogInfo($"Start() called, enabled: {enabled}, gameObject active: {gameObject.activeInHierarchy}");
-    }
-
-    private void OnEnable()
-    {
-        Plugin.Log.LogInfo("OnEnable() called");
-    }
-
-    private void OnDisable()
-    {
-        Plugin.Log.LogInfo("OnDisable() called");
-    }
-
-    private void OnDestroy()
-    {
-        Plugin.Log.LogInfo("OnDestroy() called");
-    }
-
-    // Dedicated MonoBehaviour on its own GameObject - the plugin's own instance was observed
-    // getting destroyed right after chainloader startup, taking its Update() with it.
+    // Dedicated MonoBehaviour on its own GameObject - anything created in Plugin.Awake() gets
+    // destroyed by a scene transition shortly after chainloader startup, taking Update() with it.
     private sealed class UpdateRunner : MonoBehaviour
     {
-        private void OnDestroy()
-        {
-            Plugin.Log.LogInfo("UpdateRunner.OnDestroy() called");
-        }
-
         private void Update()
         {
             Plugin.RunUpdate();
@@ -111,12 +85,6 @@ public partial class Plugin : BaseUnityPlugin
 
     private static void RunUpdate()
     {
-        // Heartbeat to confirm Update() actually runs and check player-null state each frame
-        if (Time.frameCount % 300 == 0)
-        {
-            Plugin.Log.LogInfo($"Update() heartbeat, frame: {Time.frameCount}, player null: {StartOfRound.Instance?.localPlayerController == null}");
-        }
-
         PlayerControllerB? player = StartOfRound.Instance?.localPlayerController;
         if (player == null)
             return;
@@ -125,16 +93,6 @@ public partial class Plugin : BaseUnityPlugin
         // the vanilla game uses to show the "Sell item : [E]" hover tip)
         DepositItemsDesk? desk = UnityEngine.Object.FindObjectOfType<DepositItemsDesk>();
         bool atDesk = desk != null && desk.triggerScript != null && player.hoveringOverTrigger == desk.triggerScript;
-
-        if (Keyboard.current != null && Keyboard.current[Key.G].wasPressedThisFrame)
-        {
-            Plugin.Log.LogInfo($"Update() saw G press - atDesk: {atDesk}, AutoSellInventory: {SellConfiguration.AutoSellInventory}");
-        }
-
-        if (Keyboard.current != null && Keyboard.current[Key.G].isPressed)
-        {
-            Plugin.Log.LogInfo($"Update() G isPressed - wasPressedThisFrame: {Keyboard.current[Key.G].wasPressedThisFrame}, frame: {Time.frameCount}");
-        }
 
         // Auto-sell inventory if enabled and drop key is held near the counter
         if (SellConfiguration.AutoSellInventory && atDesk && InputHandler.IsDropKeyPressed() && desk != null)
@@ -159,22 +117,17 @@ public partial class Plugin : BaseUnityPlugin
         if (!isForceDropping && !isDoubleTap)
         {
             // DiscardHeldObjectPrefix suppresses every vanilla drop triggered by G, including a
-            // plain single tap, so a normal single-item drop has to be replicated here. It's
-            // deferred by the double-tap window so a following second tap can still upgrade it
-            // into a drop-all instead of dropping just the one item.
-            if (Keyboard.current != null && Keyboard.current[Key.G].wasPressedThisFrame && pendingSingleDropCoroutine == null)
+            // plain single tap, so a normal single-item drop has to be replicated here. It fires
+            // immediately rather than waiting out the double-tap window, so a following second
+            // tap only drops whatever remains - the held item is already gone by then.
+            if (Keyboard.current != null && Keyboard.current[Key.G].wasPressedThisFrame && player.currentlyHeldObjectServer != null)
             {
-                Plugin.Log.LogInfo("Single tap detected - scheduling deferred single-item drop");
-                pendingSingleDropCoroutine = runner!.StartCoroutine(PendingSingleDropCoroutine(player));
+                Plugin.Log.LogInfo("Single tap detected - dropping held item immediately");
+                isDroppingAll = true;
+                player.DiscardHeldObject();
+                isDroppingAll = false;
             }
             return;
-        }
-
-        // A double-tap or force-drop supersedes any single drop still waiting to fire
-        if (pendingSingleDropCoroutine != null)
-        {
-            runner!.StopCoroutine(pendingSingleDropCoroutine);
-            pendingSingleDropCoroutine = null;
         }
 
         Plugin.Log.LogInfo(isForceDropping ? "Force drop detected - dropping ALL items (ignoring blacklist)" : "Double-tap drop detected - dropping all items");
@@ -210,34 +163,6 @@ public partial class Plugin : BaseUnityPlugin
         // gets past the first item's delay before being killed and restarted
         if (dropAllCoroutine == null)
             dropAllCoroutine = runner!.StartCoroutine(DropAllItemsCoroutine(player, itemsToDropList, isForceDropping));
-    }
-
-    private static System.Collections.IEnumerator PendingSingleDropCoroutine(PlayerControllerB player)
-    {
-        // Keep waiting past the double-tap window while G is still held - otherwise this would
-        // drop one item mid-hold, right before a force-drop (which starts later) drops the rest.
-        // Update() stops this coroutine the moment a double-tap or force-drop is actually detected.
-        float elapsed = 0f;
-        float window = InputConfiguration.DoubleTapWindow;
-        while (elapsed < window || (Keyboard.current != null && Keyboard.current[Key.G].isPressed))
-        {
-            elapsed += Time.deltaTime;
-            yield return null;
-        }
-
-        // Update() cancels this coroutine as soon as it detects a double-tap/force-drop, so
-        // reaching here means neither happened - perform the plain single-item drop vanilla
-        // would have done, using the item currently equipped when the window elapses.
-        Plugin.Log.LogInfo($"Deferred single-item drop firing, currentlyHeldObjectServer null: {player.currentlyHeldObjectServer == null}");
-        if (player.currentlyHeldObjectServer != null)
-        {
-            isDroppingAll = true;
-            player.DiscardHeldObject();
-            isDroppingAll = false;
-            Plugin.Log.LogInfo("Deferred single-item drop: DiscardHeldObject() called");
-        }
-
-        pendingSingleDropCoroutine = null;
     }
 
     private static System.Collections.IEnumerator DropAllItemsCoroutine(PlayerControllerB player, List<GrabbableObject> itemsToDrop, bool isForceDropping)

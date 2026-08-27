@@ -6,7 +6,7 @@ A Lethal Company mod that overhauls item dropping, grabbing, and selling: quickl
 
 ## Features
 
-* **Double-tap drop** — tap the drop key (G) twice to drop all eligible items, skipping blacklisted items (including the currently held one)
+* **Double-tap drop** — tap the drop key (G) to drop the held item immediately; tap again within the window to also drop the rest of your eligible items, skipping blacklisted ones
 * **Force drop** — hold the drop key to drop everything, ignoring the blacklist
 * **Drop blacklist** — configurable list of items that are never dropped by double-tap/force-drop
 * **Auto-sell at the company desk** — hold the drop key while looking at the counter to automatically place all sellable items on it, one at a time
@@ -19,11 +19,13 @@ In all cases, the player's originally selected hotbar slot is restored afterward
 
 ### Double-Tap Drop
 
-Use Lethal Company's normal drop key twice within a configurable time window.
+Use Lethal Company's normal drop key twice within a configurable time window. The first tap
+drops whatever you're holding immediately (blacklist doesn't apply to it, same as a vanilla
+drop); a second tap within the window drops the rest of your eligible items too.
 
 ```text
-G       → Normal item drop
-G + G   → Drop all eligible items (blacklist respected)
+G       → Drop the held item immediately
+G + G   → Also drop the rest of your eligible items (blacklist respected)
 ```
 
 ### Force Drop
