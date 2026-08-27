@@ -3,6 +3,15 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.1.3] - 2026-08-27
+
+### Fixed
+
+- Fixed a bug where every Harmony patch in the plugin (grab delay, discard-held-object, and the drop cooldown override) was silently never being applied. `Harmony.PatchAll()` only scans types that carry their own class-level `[HarmonyPatch]` attribute; since all patches are annotated directly on their methods inside the plain `Plugin` class, `PatchAll()` skipped them without any error or log output. Switched to `PatchAll(typeof(Plugin))`, which patches unannotated container types correctly.
+- Replaced the previous grab-cooldown-removal patches (which risked corrupting an in-flight grab via `StopCoroutine`) with a Harmony transpiler that directly shortens the two fixed waits inside `PlayerControllerB.GrabObject()`, driven by the new `GrabDelay` config value.
+- Fixed regular single-item dropping no longer working now that the `DiscardHeldObject` patch above is actually active: it suppresses every vanilla drop triggered by G, including a plain single tap, with nothing previously replacing that behavior. A plain tap now performs a deferred single-item drop (delayed by the double-tap window) so a following second tap can still upgrade it into a drop-all.
+- Fixed the plugin's drop logic never actually running: the `Plugin` instance's own `Update()` (and any GameObject created in `Awake()`, even with `DontDestroyOnLoad`) was being torn down by a scene transition shortly after chainloader startup, before `Start()`/`Update()` ever fired once. The Harmony patches kept working throughout since they patch target methods' IL directly and don't depend on any live instance, which masked the issue. Moved the drop logic to a dedicated runner component created lazily via a `StartOfRound.Awake` postfix, well after that transition has settled.
+
 ## [0.1.2] - 2026-08-27
 
 ### Fixed

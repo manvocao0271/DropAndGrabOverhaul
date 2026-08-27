@@ -3,6 +3,8 @@ using BepInEx.Logging;
 using BepInEx.Configuration;
 using System.Collections;
 using System.Collections.Generic;
+using System.Reflection;
+using System.Reflection.Emit;
 using UnityEngine;
 using HarmonyLib;
 using DropAndGrabOverhaul.Input;
@@ -31,8 +33,10 @@ public partial class Plugin : BaseUnityPlugin
 {
     internal static ManualLogSource Log { get; private set; } = null!;
     private static Harmony? harmonyInstance;
+    private static UpdateRunner? runner;
     private static Coroutine? autoSellCoroutine;
     private static Coroutine? dropAllCoroutine;
+    private static Coroutine? pendingSingleDropCoroutine;
     private static bool isPlacingOnCounter;
     private static bool isDroppingAll;
 
@@ -49,8 +53,16 @@ public partial class Plugin : BaseUnityPlugin
         SellConfiguration.Initialize(Config);
 
         // Apply Harmony patch to intercept drop behavior
+        // Our patches are annotated directly on their methods with no wrapping class carrying its
+        // own [HarmonyPatch], so the parameterless PatchAll() silently skips them - it only scans
+        // types that already have a class-level [HarmonyPatch] attribute. Passing typeof(Plugin)
+        // uses PatchAll(Type) instead, which allows unannotated container types.
         harmonyInstance = new Harmony("com.github.manvocao0271.dropandgraboverhaul");
-        harmonyInstance.PatchAll();
+        harmonyInstance.PatchAll(typeof(Plugin));
+
+        // Anything we create this early gets destroyed by a scene transition that happens
+        // shortly after chainloader startup, so the runner is created lazily once StartOfRound
+        // exists instead (see StartOfRoundAwakePostfix below).
 
         // BepInEx also gives us a config file for easy configuration.
         // See https://lethal.wiki/dev/intermediate/custom-configs
@@ -62,8 +74,49 @@ public partial class Plugin : BaseUnityPlugin
         Log.LogInfo($"Plugin {Name} is loaded!");
     }
 
-    private void Update()
+    private void Start()
     {
+        Plugin.Log.LogInfo($"Start() called, enabled: {enabled}, gameObject active: {gameObject.activeInHierarchy}");
+    }
+
+    private void OnEnable()
+    {
+        Plugin.Log.LogInfo("OnEnable() called");
+    }
+
+    private void OnDisable()
+    {
+        Plugin.Log.LogInfo("OnDisable() called");
+    }
+
+    private void OnDestroy()
+    {
+        Plugin.Log.LogInfo("OnDestroy() called");
+    }
+
+    // Dedicated MonoBehaviour on its own GameObject - the plugin's own instance was observed
+    // getting destroyed right after chainloader startup, taking its Update() with it.
+    private sealed class UpdateRunner : MonoBehaviour
+    {
+        private void OnDestroy()
+        {
+            Plugin.Log.LogInfo("UpdateRunner.OnDestroy() called");
+        }
+
+        private void Update()
+        {
+            Plugin.RunUpdate();
+        }
+    }
+
+    private static void RunUpdate()
+    {
+        // Heartbeat to confirm Update() actually runs and check player-null state each frame
+        if (Time.frameCount % 300 == 0)
+        {
+            Plugin.Log.LogInfo($"Update() heartbeat, frame: {Time.frameCount}, player null: {StartOfRound.Instance?.localPlayerController == null}");
+        }
+
         PlayerControllerB? player = StartOfRound.Instance?.localPlayerController;
         if (player == null)
             return;
@@ -73,13 +126,23 @@ public partial class Plugin : BaseUnityPlugin
         DepositItemsDesk? desk = UnityEngine.Object.FindObjectOfType<DepositItemsDesk>();
         bool atDesk = desk != null && desk.triggerScript != null && player.hoveringOverTrigger == desk.triggerScript;
 
+        if (Keyboard.current != null && Keyboard.current[Key.G].wasPressedThisFrame)
+        {
+            Plugin.Log.LogInfo($"Update() saw G press - atDesk: {atDesk}, AutoSellInventory: {SellConfiguration.AutoSellInventory}");
+        }
+
+        if (Keyboard.current != null && Keyboard.current[Key.G].isPressed)
+        {
+            Plugin.Log.LogInfo($"Update() G isPressed - wasPressedThisFrame: {Keyboard.current[Key.G].wasPressedThisFrame}, frame: {Time.frameCount}");
+        }
+
         // Auto-sell inventory if enabled and drop key is held near the counter
         if (SellConfiguration.AutoSellInventory && atDesk && InputHandler.IsDropKeyPressed() && desk != null)
         {
             // Only start the coroutine if one isn't already running, otherwise it never
             // gets past the first item's delay before being killed and restarted
             if (autoSellCoroutine == null)
-                autoSellCoroutine = StartCoroutine(AutoSellInventoryCoroutine(player, desk));
+                autoSellCoroutine = runner!.StartCoroutine(AutoSellInventoryCoroutine(player, desk));
             return;
         }
 
@@ -94,7 +157,25 @@ public partial class Plugin : BaseUnityPlugin
         bool isDoubleTap = !isForceDropping && InputHandler.IsDoubleTapDrop();
 
         if (!isForceDropping && !isDoubleTap)
+        {
+            // DiscardHeldObjectPrefix suppresses every vanilla drop triggered by G, including a
+            // plain single tap, so a normal single-item drop has to be replicated here. It's
+            // deferred by the double-tap window so a following second tap can still upgrade it
+            // into a drop-all instead of dropping just the one item.
+            if (Keyboard.current != null && Keyboard.current[Key.G].wasPressedThisFrame && pendingSingleDropCoroutine == null)
+            {
+                Plugin.Log.LogInfo("Single tap detected - scheduling deferred single-item drop");
+                pendingSingleDropCoroutine = runner!.StartCoroutine(PendingSingleDropCoroutine(player));
+            }
             return;
+        }
+
+        // A double-tap or force-drop supersedes any single drop still waiting to fire
+        if (pendingSingleDropCoroutine != null)
+        {
+            runner!.StopCoroutine(pendingSingleDropCoroutine);
+            pendingSingleDropCoroutine = null;
+        }
 
         Plugin.Log.LogInfo(isForceDropping ? "Force drop detected - dropping ALL items (ignoring blacklist)" : "Double-tap drop detected - dropping all items");
 
@@ -128,10 +209,38 @@ public partial class Plugin : BaseUnityPlugin
         // Only start the coroutine if one isn't already running, otherwise it never
         // gets past the first item's delay before being killed and restarted
         if (dropAllCoroutine == null)
-            dropAllCoroutine = StartCoroutine(DropAllItemsCoroutine(player, itemsToDropList, isForceDropping));
+            dropAllCoroutine = runner!.StartCoroutine(DropAllItemsCoroutine(player, itemsToDropList, isForceDropping));
     }
 
-    private System.Collections.IEnumerator DropAllItemsCoroutine(PlayerControllerB player, List<GrabbableObject> itemsToDrop, bool isForceDropping)
+    private static System.Collections.IEnumerator PendingSingleDropCoroutine(PlayerControllerB player)
+    {
+        // Keep waiting past the double-tap window while G is still held - otherwise this would
+        // drop one item mid-hold, right before a force-drop (which starts later) drops the rest.
+        // Update() stops this coroutine the moment a double-tap or force-drop is actually detected.
+        float elapsed = 0f;
+        float window = InputConfiguration.DoubleTapWindow;
+        while (elapsed < window || (Keyboard.current != null && Keyboard.current[Key.G].isPressed))
+        {
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+
+        // Update() cancels this coroutine as soon as it detects a double-tap/force-drop, so
+        // reaching here means neither happened - perform the plain single-item drop vanilla
+        // would have done, using the item currently equipped when the window elapses.
+        Plugin.Log.LogInfo($"Deferred single-item drop firing, currentlyHeldObjectServer null: {player.currentlyHeldObjectServer == null}");
+        if (player.currentlyHeldObjectServer != null)
+        {
+            isDroppingAll = true;
+            player.DiscardHeldObject();
+            isDroppingAll = false;
+            Plugin.Log.LogInfo("Deferred single-item drop: DiscardHeldObject() called");
+        }
+
+        pendingSingleDropCoroutine = null;
+    }
+
+    private static System.Collections.IEnumerator DropAllItemsCoroutine(PlayerControllerB player, List<GrabbableObject> itemsToDrop, bool isForceDropping)
     {
         // Save the current item slot to restore later
         int originalSlot = player.currentItemSlot;
@@ -184,7 +293,7 @@ public partial class Plugin : BaseUnityPlugin
         dropAllCoroutine = null;
     }
 
-    private System.Collections.IEnumerator AutoSellInventoryCoroutine(PlayerControllerB player, DepositItemsDesk desk)
+    private static System.Collections.IEnumerator AutoSellInventoryCoroutine(PlayerControllerB player, DepositItemsDesk desk)
     {
         int soldCount = 0;
         for (int i = 0; i < player.ItemSlots.Length; i++)
@@ -214,6 +323,21 @@ public partial class Plugin : BaseUnityPlugin
         autoSellCoroutine = null;
     }
 
+    // Anything created in Plugin.Awake() gets destroyed by an early scene transition, so the
+    // runner is created lazily here instead, once StartOfRound exists and that transition is over
+    [HarmonyPatch(typeof(StartOfRound), "Awake")]
+    [HarmonyPostfix]
+    private static void StartOfRoundAwakePostfix()
+    {
+        if (runner != null)
+            return;
+
+        GameObject runnerObject = new GameObject("DropAndGrabOverhaulRunner");
+        UnityEngine.Object.DontDestroyOnLoad(runnerObject);
+        runner = runnerObject.AddComponent<UpdateRunner>();
+        Plugin.Log.LogInfo("UpdateRunner created via StartOfRound.Awake postfix");
+    }
+
     // Harmony patch to intercept the game's default drop call
     [HarmonyPatch(typeof(PlayerControllerB), "DiscardHeldObject")]
     [HarmonyPrefix]
@@ -227,137 +351,68 @@ public partial class Plugin : BaseUnityPlugin
         // Let the Update() method handle all drop logic with proper blacklist checks
         if (Keyboard.current != null && Keyboard.current[Key.G].wasPressedThisFrame)
         {
+            Plugin.Log.LogInfo($"DiscardHeldObjectPrefix: suppressing vanilla drop on G press, frame: {Time.frameCount}");
             return false;
         }
 
         return true;
     }
 
-    // Harmony patch to remove grab cooldown (item use cooldown)
-    [HarmonyPatch(typeof(GrabbableObject), "RequireCooldown")]
-    [HarmonyPrefix]
-    private static bool RequireCooldownPrefix(GrabbableObject __instance, ref bool __result)
-    {
-        // If grab cooldown removal is enabled, skip the cooldown check
-        if (GrabConfiguration.RemoveGrabCooldown)
-        {
-            __result = false; // Return false to allow grab without cooldown
-            return false; // Skip the original method
-        }
-
-        return true; // Allow original method to run
-    }
-
-    // Harmony patch to remove interact trigger cooldown (hover cooldown for grabbables)
+    // Harmony patch to shorten the vanilla 0.2s grab cooldown to the configured delay.
+    // InteractTrigger.cooldownTime is what Interact() copies into currentCooldownValue on every
+    // successful grab, so overriding it here is enough - no need to fight the cooldown elsewhere.
     [HarmonyPatch(typeof(InteractTrigger), "Interact")]
     [HarmonyPrefix]
     private static void InteractTriggerInteractPrefix(InteractTrigger __instance)
     {
-        // If grab cooldown removal is enabled and this trigger is for a grabbable object,
-        // set the cooldown to expired BEFORE the method runs so the cooldown check doesn't block it
-        if (GrabConfiguration.RemoveGrabCooldown)
+        if (__instance.GetComponentInParent<GrabbableObject>() != null)
         {
-            // Check if this InteractTrigger is part of a GrabbableObject
-            GrabbableObject? grabbable = __instance.GetComponentInParent<GrabbableObject>();
-            if (grabbable != null)
-            {
-                // Set cooldown to expired (negative value means it won't block next grab)
-                // This runs BEFORE the method, so the early return check will fail and let the prompt show
-                __instance.currentCooldownValue = -1f;
-            }
+            __instance.cooldownTime = GrabConfiguration.GrabDelay;
         }
     }
 
-    // Harmony postfix to keep the hint showing (reset cooldown immediately after it's set)
-    [HarmonyPatch(typeof(InteractTrigger), "Interact")]
-    [HarmonyPostfix]
-    private static void InteractTriggerInteractPostfix(InteractTrigger __instance)
+    // Harmony transpiler to shrink the two fixed waits inside PlayerControllerB's GrabObject()
+    // coroutine - WaitForSeconds(0.1f) and WaitForSeconds(grabObjectAnimationTime - 0.2f) - which
+    // is what actually keeps isGrabbingObjectAnimation true and blocks further grabs/interacts.
+    // Patching BeginGrabObject or clearing the flag directly doesn't work: a second press calls
+    // StopCoroutine() on the still-running first grab before it finishes, corrupting it. Rewriting
+    // the coroutine's own IL constants (same approach as the NoGrabDelay mod) shortens the wait
+    // without touching the flag or the server-sync loop in between.
+    [HarmonyPatch(typeof(PlayerControllerB), "GrabObject", MethodType.Enumerator)]
+    [HarmonyTranspiler]
+    private static IEnumerable<CodeInstruction> GrabObjectTranspiler(IEnumerable<CodeInstruction> instructions)
     {
-        // If grab cooldown removal is enabled and this trigger is for a grabbable object,
-        // reset the cooldown that was just set so the hint stays visible
-        if (GrabConfiguration.RemoveGrabCooldown)
+        MethodInfo getDecrease = typeof(GrabConfiguration).GetMethod(nameof(GrabConfiguration.GetInteractionCooldownDecrease));
+        List<CodeInstruction> instr = new List<CodeInstruction>(instructions);
+        int patchedCount = 0;
+        for (int i = 0; i < instr.Count; i++)
         {
-            // Check if this InteractTrigger is part of a GrabbableObject
-            GrabbableObject? grabbable = __instance.GetComponentInParent<GrabbableObject>();
-            if (grabbable != null)
+            CodeInstruction instruction = instr[i];
+            yield return instruction;
+
+            // WaitForSeconds(0.1f) -> WaitForSeconds(0.1f - decrease / 2f)
+            if (instruction.opcode == OpCodes.Ldc_R4 && (float)instruction.operand == 0.1f
+                && i + 1 < instr.Count && instr[i + 1].opcode == OpCodes.Newobj)
             {
-                // Keep cooldown expired so hint stays visible and player can grab continuously
-                __instance.currentCooldownValue = -1f;
+                yield return new CodeInstruction(OpCodes.Call, getDecrease);
+                yield return new CodeInstruction(OpCodes.Ldc_R4, 2f);
+                yield return new CodeInstruction(OpCodes.Div);
+                yield return new CodeInstruction(OpCodes.Sub);
+                patchedCount++;
+            }
+
+            // (grabObjectAnimationTime - 0.2f) -> (grabObjectAnimationTime - 0.2f) - decrease
+            if (instruction.opcode == OpCodes.Ldc_R4 && (float)instruction.operand == 0.2f
+                && i + 1 < instr.Count && instr[i + 1].opcode == OpCodes.Sub)
+            {
+                yield return new CodeInstruction(OpCodes.Sub);
+                yield return new CodeInstruction(OpCodes.Call, getDecrease);
+                patchedCount++;
             }
         }
-    }
 
-    // Harmony patch to remove cooldown set by StopSpecialAnimation (for grabbables with animations)
-    [HarmonyPatch(typeof(InteractTrigger), "StopSpecialAnimation")]
-    [HarmonyPostfix]
-    private static void StopSpecialAnimationPostfix(InteractTrigger __instance)
-    {
-        // If grab cooldown removal is enabled and this trigger is for a grabbable object,
-        // override the cooldown that was just set by StopSpecialAnimation
-        if (GrabConfiguration.RemoveGrabCooldown)
-        {
-            // Check if this InteractTrigger is part of a GrabbableObject
-            GrabbableObject? grabbable = __instance.GetComponentInParent<GrabbableObject>();
-            if (grabbable != null)
-            {
-                // Set cooldown to expired (negative value means it won't block next grab)
-                __instance.currentCooldownValue = -1f;
-            }
-        }
-    }
-
-    // Harmony patch to remove cooldown set by OnEnable (when new item enters hover range)
-    [HarmonyPatch(typeof(InteractTrigger), "OnEnable")]
-    [HarmonyPostfix]
-    private static void OnEnablePostfix(InteractTrigger __instance)
-    {
-        // If grab cooldown removal is enabled and this trigger is for a grabbable object,
-        // override the cooldown that was just set by OnEnable
-        if (GrabConfiguration.RemoveGrabCooldown)
-        {
-            // Check if this InteractTrigger is part of a GrabbableObject
-            GrabbableObject? grabbable = __instance.GetComponentInParent<GrabbableObject>();
-            if (grabbable != null)
-            {
-                // Set cooldown to expired (negative value means it won't block next grab)
-                __instance.currentCooldownValue = -1f;
-            }
-        }
-    }
-
-    // Harmony patch to clear the grab animation lock that blocks the hover tip and next grab
-    [HarmonyPatch(typeof(PlayerControllerB), "BeginGrabObject")]
-    [HarmonyPostfix]
-    private static void BeginGrabObjectPostfix(PlayerControllerB __instance)
-    {
-        if (GrabConfiguration.RemoveGrabCooldown)
-        {
-            // isGrabbingObjectAnimation gates SetHoverTipAndCurrentInteractTrigger(); clearing it
-            // immediately lets the hover tip and next grab become available right away
-            __instance.isGrabbingObjectAnimation = false;
-        }
-    }
-
-    // Harmony patch to re-assert the grab hint if the game blanked it (animation lock/linecast obstruction)
-    [HarmonyPatch(typeof(PlayerControllerB), "SetHoverTipAndCurrentInteractTrigger")]
-    [HarmonyPostfix]
-    private static void SetHoverTipAndCurrentInteractTriggerPostfix(PlayerControllerB __instance)
-    {
-        if (!GrabConfiguration.RemoveGrabCooldown || !string.IsNullOrEmpty(__instance.cursorTip.text))
-            return;
-
-        Ray ray = new Ray(__instance.gameplayCamera.transform.position, __instance.gameplayCamera.transform.forward);
-        if (Physics.Raycast(ray, out RaycastHit rayHit, __instance.grabDistance, __instance.interactableObjectsMask)
-            && rayHit.collider.gameObject.layer != 8 && rayHit.collider.gameObject.layer != 30
-            && rayHit.collider.CompareTag("PhysicsProp"))
-        {
-            GrabbableObject? grabbable = rayHit.collider.gameObject.GetComponent<GrabbableObject>();
-            if (grabbable != null && !grabbable.isHeld && !grabbable.isPocketed)
-            {
-                __instance.cursorTip.text = "Grab : [E]";
-                __instance.cursorIcon.enabled = true;
-                __instance.cursorIcon.sprite = __instance.grabItemIcon;
-            }
-        }
+        // Should log 2 - if this logs 0, GrabObject()'s IL no longer matches these patterns
+        // (e.g. game update) and the transpiler silently did nothing.
+        Plugin.Log.LogInfo($"GrabObjectTranspiler patched {patchedCount} delay checkpoint(s)");
     }
 }
