@@ -3,6 +3,12 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.1.5] - 2026-08-27 (BETA - fix unverified in live multiplayer)
+
+### Fixed
+
+- Fixed items disappearing (or the whole drop-all batch vanishing) when dropping multiple items back-to-back with double-tap/force-drop, reported live over multiplayer. `DropAllItemsCoroutine` waited for `currentlyHeldObjectServer` to clear before switching to the next item, but on a laggy connection that wait could time out before the previous item's `ThrowObjectClientRpc` echo actually arrived; switching slots anyway then overwrote `currentlyHeldObjectServer` out from under the still in-flight throw, so the delayed echo found a mismatched reference (logged by the game as `ThrowObjectClientRpc called for an object which is not the same as currentlyHeldObjectServer`) and never finished clearing/placing the item. The coroutine now stops dropping further items if that wait times out instead of switching anyway, so the pending echo can still land on a matching reference. **Note:** The defensive timeout break has been implemented and tested in a debug session, but the overall fix has not yet been validated in a live multiplayer server — users should report any remaining desync issues.
+
 ## [0.1.4] - 2026-08-27
 
 ### Changed
