@@ -32,7 +32,9 @@ public partial class Plugin : BaseUnityPlugin
     internal static ManualLogSource Log { get; private set; } = null!;
     private static Harmony? harmonyInstance;
     private static Coroutine? autoSellCoroutine;
+    private static Coroutine? dropAllCoroutine;
     private static bool isPlacingOnCounter;
+    private static bool isDroppingAll;
 
     private void Awake()
     {
@@ -118,12 +120,20 @@ public partial class Plugin : BaseUnityPlugin
             return;
         }
 
+        // Only start the coroutine if one isn't already running, otherwise it never
+        // gets past the first item's delay before being killed and restarted
+        if (dropAllCoroutine == null)
+            dropAllCoroutine = StartCoroutine(DropAllItemsCoroutine(player, itemsToDropList, isForceDropping));
+    }
+
+    private System.Collections.IEnumerator DropAllItemsCoroutine(PlayerControllerB player, List<GrabbableObject> itemsToDrop, bool isForceDropping)
+    {
         // Save the current item slot to restore later
         int originalSlot = player.currentItemSlot;
 
         // Drop each item by equipping it first, then dropping it
         int droppedCount = 0;
-        foreach (GrabbableObject item in itemsToDropList)
+        foreach (GrabbableObject item in itemsToDrop)
         {
             if (item != null)
             {
@@ -144,10 +154,24 @@ public partial class Plugin : BaseUnityPlugin
 
                 // Switch to this slot to equip it
                 player.SwitchToItemSlot(slotIndex);
-                // Now drop it
+                // Now drop it, suppressing the drop-key patch in case this still lands on a G press frame
+                isDroppingAll = true;
                 player.DiscardHeldObject();
+                isDroppingAll = false;
                 droppedCount++;
                 Plugin.Log.LogInfo($"Dropped item: {itemName}");
+
+                // currentlyHeldObjectServer is only cleared once the ThrowObjectClientRpc echo
+                // arrives back on this client. Switching slots before that lands makes
+                // SwitchToItemSlot call PocketItem() on the item we just dropped (since it's
+                // still the "held" reference), which re-hides its mesh renderers locally even
+                // though the drop is already synced correctly for everyone else. Wait for the
+                // reference to actually clear, with a timeout so a dropped RPC can't hang us.
+                float waitStart = UnityEngine.Time.time;
+                while (player.currentlyHeldObjectServer != null && UnityEngine.Time.time - waitStart < 2f)
+                {
+                    yield return null;
+                }
             }
         }
 
@@ -155,6 +179,7 @@ public partial class Plugin : BaseUnityPlugin
         player.SwitchToItemSlot(originalSlot);
 
         Plugin.Log.LogInfo($"Dropped {droppedCount} items total");
+        dropAllCoroutine = null;
     }
 
     private System.Collections.IEnumerator AutoSellInventoryCoroutine(PlayerControllerB player, DepositItemsDesk desk)
@@ -192,8 +217,8 @@ public partial class Plugin : BaseUnityPlugin
     [HarmonyPrefix]
     private static bool DiscardHeldObjectPrefix(PlayerControllerB __instance)
     {
-        // Never suppress our own sell-placement call to the desk counter
-        if (isPlacingOnCounter)
+        // Never suppress our own sell-placement or drop-all calls
+        if (isPlacingOnCounter || isDroppingAll)
             return true;
 
         // Supress ALL drops triggered by the G key (single-tap, double-tap, or hold)
