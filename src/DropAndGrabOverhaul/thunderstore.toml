@@ -7,8 +7,8 @@ repository = "https://thunderstore.io"
 [package]
 namespace = "bobabulkerENTERPRISE"
 name = "DropAndGrabOverhaul"
-versionNumber = "0.1.0"
-description = "Drop all items with one key, remove grab cooldown, and sell all scrap in inventory at the company desk. Fully configurable blacklists for both dropping and selling."
+versionNumber = "0.1.1"
+description = "Drop all items by double tapping and put all scrap in inventory on sell counter at once by holding drop key. Remove grab item cooldown."
 websiteUrl = "https://github.com/manvocao0271/DropAndGrabOverhaul"
 containsNsfwContent = false
 
