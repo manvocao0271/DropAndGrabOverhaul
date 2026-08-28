@@ -3,6 +3,14 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.1.8] - 2026-08-28
+
+### Fixed
+
+- Fixed the chute auto-store `StopOnJump` feature never actually stopping: it only checked `player.isJumping` once per item (gated behind a single `WaitForSeconds`), so a brief jump window (only ~0.25s) could be easily missed. Replaced with per-frame polling that checks `isJumping`, `isFallingFromJump`, and `isFallingNoJump` every frame during the delay between items.
+- Extended the stop condition to cover falling without jumping (e.g. stepping off the elevated ship), not just intentional jump input, via the new `isFallingNoJump` flag check.
+- Fixed chute auto-store item duplication bug: items would sometimes remain physicallly in the world and grabbable even after being stored in inventory. Root cause was `PlayerControllerB.DestroyItemInSlotAndSync` only immediately despawns the `NetworkObject` for the host; all other clients must wait for a client→host→everyone RPC round trip. The old implementation fired independent fire-and-forget coroutines per item with no despawn confirmation and trusted slot indices captured before delayed destruction. Under lag, the RPC could silently fail, leaving data stored while the physical pickup remained—a duplicate. Replaced with a single serialized `ProcessChuteFinalizeQueue` coroutine that confirms each despawn with polling before moving to the next item.
+
 ## [0.1.7] - 2026-08-28
 
 ### Added

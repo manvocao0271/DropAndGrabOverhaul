@@ -6,9 +6,11 @@ namespace DropAndGrabOverhaul.Configuration
     {
         private static ConfigEntry<float> storeDelayLandedConfig = null!;
         private static ConfigEntry<float> storeDelayOrbitConfig = null!;
+        private static ConfigEntry<bool> stopOnJumpConfig = null!;
 
         public static float StoreDelayLanded { get; private set; }
         public static float StoreDelayOrbit { get; private set; }
+        public static bool StopOnJump { get; private set; }
 
         public static void Initialize(ConfigFile config)
         {
@@ -32,9 +34,17 @@ namespace DropAndGrabOverhaul.Configuration
                 )
             );
 
+            stopOnJumpConfig = config.Bind(
+                section: "ShipInventoryUpdated",
+                key: "StopOnJump",
+                defaultValue: true,
+                description: "Stop storing the rest of the inventory into the chute if the player jumps or falls (e.g. off the elevated ship)."
+            );
+
             StoreDelayLanded = storeDelayLandedConfig.Value;
             StoreDelayOrbit = storeDelayOrbitConfig.Value;
-            Plugin.Log.LogInfo($"Ship inventory chute store delay: {StoreDelayLanded}s landed, {StoreDelayOrbit}s in orbit");
+            StopOnJump = stopOnJumpConfig.Value;
+            Plugin.Log.LogInfo($"Ship inventory chute store delay: {StoreDelayLanded}s landed, {StoreDelayOrbit}s in orbit; stop on jump: {StopOnJump}");
         }
     }
 }

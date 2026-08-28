@@ -12,7 +12,7 @@ Overhauls item dropping, grabbing, and selling in Lethal Company — drop or sel
 * **Auto-sell at the company desk** — press the drop key once while looking at the counter to place all your sellable scrap on it automatically, one item at a time
 * **Sell blacklist** — a separate configurable list of items the auto-sell feature will always skip
 * **Configurable grab delay** — shrink the vanilla delay between picking up items down to as little as 0.01s for rapid-fire grabbing
-* **ShipInventoryUpdated chute auto-store** *(optional add-on, requires [ShipInventoryUpdated](https://thunderstore.io/c/lethal-company/p/BobDaBiscuit/ShipInventory/))* — press the drop key once while hovering over the ship's chute to automatically feed your entire inventory into it, one item at a time, including anything you grab while it's still running
+* **ShipInventoryUpdated chute auto-store** *(optional add-on, requires [ShipInventoryUpdated](https://thunderstore.io/c/lethal-company/p/BobDaBiscuit/ShipInventory/))* — press the drop key once while hovering over the ship's chute to automatically feed your entire inventory into it, one item at a time, including anything you grab while it's still running. Jumping or falling (e.g. off the elevated ship) cancels the rest of the sequence by default (configurable).
 
 Your originally selected hotbar slot is always restored afterward, even if it ends up empty.
 

@@ -38,12 +38,22 @@ public partial class Plugin : BaseUnityPlugin
     private static Coroutine? autoSellCoroutine;
     private static Coroutine? dropAllCoroutine;
     private static Coroutine? storeInChuteCoroutine;
+    private static Coroutine? chuteFinalizeQueueCoroutine;
     private static bool isPlacingOnCounter;
     private static bool isDroppingAll;
 
     // Floor for how long a chute-stored item stays visible/audible before despawning, regardless
     // of how short the configured pacing delay is, so its drop SFX never gets cut off.
     private const float MinSettleTime = 1f;
+
+    // How long to wait for a chute-stored item to actually despawn over the network before giving
+    // up and logging it as a potential leftover duplicate (see ProcessChuteFinalizeQueue).
+    private const float ChuteDestroyConfirmTimeout = 5f;
+
+    // Items waiting to be added to the ship inventory and despawned once their settle time is up,
+    // processed one at a time by ProcessChuteFinalizeQueue regardless of how fast new items are
+    // still falling in StoreAllInChuteCoroutine.
+    private static readonly Queue<(GrabbableObject Item, int Slot, string ItemName, float ReadyAtTime)> chuteFinalizeQueue = new();
 
     private void Awake()
     {
@@ -295,11 +305,20 @@ public partial class Plugin : BaseUnityPlugin
         // items grabbed after this coroutine already started still get caught and stored too,
         // rather than only ever processing whatever was held at the very start. Items are tracked
         // by reference (not slot index) once claimed since their slot doesn't actually go null
-        // until FinalizeStoredItemAfterDelay runs later - without this, the same still-pending
+        // until ProcessChuteFinalizeQueue destroys it later - without this, the same still-pending
         // item would keep getting reselected every iteration until then.
         var processedItems = new HashSet<GrabbableObject>();
         while (true)
         {
+            // Configurable early-out: jumping or falling (e.g. off the elevated ship) while items
+            // are still being stored cancels the rest of the sequence rather than continuing to
+            // store items out from under the player.
+            if (IsJumpingOrFalling(player))
+            {
+                Plugin.Log.LogInfo("Player jumped or is falling - stopping the rest of the chute auto-store sequence");
+                break;
+            }
+
             List<(int Slot, GrabbableObject Item)> items = ShipInventoryCompat.GetStorableItems(player);
 
             GrabbableObject? item = null;
@@ -350,24 +369,87 @@ public partial class Plugin : BaseUnityPlugin
             // finish before it's destroyed - so that part always waits at least MinSettleTime.
             float pacingDelay = StartOfRound.Instance.shipHasLanded ? ShipInventoryConfiguration.StoreDelayLanded : ShipInventoryConfiguration.StoreDelayOrbit;
             float settleDelay = Mathf.Max(pacingDelay, MinSettleTime);
-            runner!.StartCoroutine(FinalizeStoredItemAfterDelay(player, item, slot, itemName, settleDelay));
+            chuteFinalizeQueue.Enqueue((item, slot, itemName, Time.time + settleDelay));
+            if (chuteFinalizeQueueCoroutine == null)
+                chuteFinalizeQueueCoroutine = runner!.StartCoroutine(ProcessChuteFinalizeQueue(player));
             storedCount++;
 
-            yield return new WaitForSeconds(pacingDelay);
+            // Waited out frame-by-frame (instead of a single WaitForSeconds) so a jump/fall can
+            // still be caught mid-wait - isJumping only stays true for ~0.25s after the jump key
+            // is pressed, easy to miss entirely if pacingDelay is longer than that and this only
+            // polled once per item.
+            float waited = 0f;
+            while (waited < pacingDelay)
+            {
+                if (IsJumpingOrFalling(player))
+                {
+                    Plugin.Log.LogInfo("Player jumped or is falling - stopping the rest of the chute auto-store sequence");
+                    goto stoppedByJump;
+                }
+                yield return null;
+                waited += Time.deltaTime;
+            }
         }
 
+        stoppedByJump:
         if (storedCount > 0)
             StartOfRound.Instance.SendChangedWeightEvent();
 
         storeInChuteCoroutine = null;
     }
 
-    private static System.Collections.IEnumerator FinalizeStoredItemAfterDelay(PlayerControllerB player, GrabbableObject item, int slot, string itemName, float delay)
+    // isJumping is only true for the initial ~0.25s takeoff window (see the game's own PlayerJump
+    // coroutine); isFallingFromJump covers the rest of that arc until landing; isFallingNoJump
+    // covers falling off a ledge/the elevated ship without jumping at all.
+    private static bool IsJumpingOrFalling(PlayerControllerB player)
     {
-        yield return new WaitForSeconds(delay);
+        return ShipInventoryConfiguration.StopOnJump && (player.isJumping || player.isFallingFromJump || player.isFallingNoJump);
+    }
 
-        ShipInventoryCompat.FinalizeStoredItem(player, item, slot);
-        Plugin.Log.LogInfo($"Stored item into ship inventory chute: {itemName}");
+    // Finalizes (adds to the ship inventory, then despawns) queued chute items one at a time,
+    // regardless of how fast StoreAllInChuteCoroutine paces new items falling. Keeping this
+    // serialized - never more than one item's destroy in flight at once - avoids overlapping
+    // DestroyItemInSlotAndSync network round-trips stepping on each other's slot/held-item state
+    // on the host. Also waits to confirm the despawn actually lands instead of assuming it always
+    // does, since that depends on a client -> host -> everyone round trip that can silently fail
+    // under lag - without this, a failed despawn left the item's data stored in the ship
+    // inventory while its physical pickup stayed behind in the world, duplicating it with no
+    // trace in the log.
+    private static System.Collections.IEnumerator ProcessChuteFinalizeQueue(PlayerControllerB player)
+    {
+        while (chuteFinalizeQueue.Count > 0)
+        {
+            (GrabbableObject item, int slot, string itemName, float readyAtTime) = chuteFinalizeQueue.Dequeue();
+
+            float wait = readyAtTime - Time.time;
+            if (wait > 0f)
+                yield return new WaitForSeconds(wait);
+
+            if (item == null)
+                continue;
+
+            ShipInventoryCompat.AddToShipInventory(item, player);
+
+            if (!ShipInventoryCompat.TryDestroyItemInSlot(player, item, slot))
+            {
+                Plugin.Log.LogWarning($"Couldn't find '{itemName}' in the player's item slots to destroy after storing it - it may remain visible/pickup-able as a duplicate.");
+                continue;
+            }
+
+            float elapsed = 0f;
+            while (item != null && elapsed < ChuteDestroyConfirmTimeout)
+            {
+                yield return null;
+                elapsed += Time.deltaTime;
+            }
+
+            if (item != null)
+                Plugin.Log.LogWarning($"'{itemName}' did not despawn within {ChuteDestroyConfirmTimeout}s of being stored - it may remain visible/pickup-able as a duplicate.");
+            else
+                Plugin.Log.LogInfo($"Stored item into ship inventory chute: {itemName}");
+        }
+
+        chuteFinalizeQueueCoroutine = null;
     }
 
     // Anything created in Plugin.Awake() gets destroyed by an early scene transition, so the

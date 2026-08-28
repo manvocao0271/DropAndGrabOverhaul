@@ -39,7 +39,7 @@ While looking at the company desk's counter, press the drop key once to put all 
 
 ### ShipInventoryUpdated Chute
 
-Only available if the [ShipInventoryUpdated](https://thunderstore.io/c/lethal-company/) mod is also installed. Press the drop key once while hovering the chute's interact trigger. Each non-blacklisted item (in the mod's own .cfg file) is dropped and stored in sequence (with its own fall animation and drop sound) until your slots are empty, including any items you grab while the sequence is still running.
+Only available if the [ShipInventoryUpdated](https://thunderstore.io/c/lethal-company/) mod is also installed. Press the drop key once while hovering the chute's interact trigger. Each non-blacklisted item (in the mod's own .cfg file) is dropped and stored in sequence (with its own fall animation and drop sound) until your slots are empty, including any items you grab while the sequence is still running. Jumping or falling (e.g. off the elevated ship) stops the rest of the sequence by default (configurable).
 
 ## Configuration
 
@@ -63,6 +63,7 @@ SellBlacklistedItems     Comma-separated item names that auto-sell should skip
 [ShipInventoryUpdated]
 StoreDelayLanded         Delay in seconds between each item stored while the ship has landed on a moon (default: 1)
 StoreDelayOrbit          Delay in seconds between each item stored while the ship is in orbit (default: 0.2)
+StopOnJump               Stop storing the rest of the inventory into the chute if the player jumps or falls (default: true)
 ```
 
 ## Compatibility
