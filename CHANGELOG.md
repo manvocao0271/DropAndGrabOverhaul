@@ -3,6 +3,23 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.1.7] - 2026-08-28
+
+### Added
+
+- Added ShipInventoryUpdated chute auto-store integration (optional, requires [ShipInventoryUpdated](https://thunderstore.io/c/lethal-company/)): pressing the drop key once while hovering the chute's interact trigger now stores your whole inventory into it, one item at a time (with its own fall animation and drop sound), including anything you grab while the sequence is still running. Blacklisted items (via ShipInventoryUpdated's own config) are skipped.
+- Added `[ShipInventoryUpdated]` config section with `StoreDelayLanded` (default 1s) and `StoreDelayOrbit` (default 0.2s) to control the pacing between items stored, differentiated by whether the ship has landed.
+- Added `THUNDERSTORE.md`, a feature-focused listing description used for the Thunderstore package page, separate from the GitHub `README.md`.
+
+### Fixed
+
+- Fixed the chute auto-store sequence cutting off the drop sound early when the configured delay was short. The pacing delay between items is now decoupled from a minimum settle time, so each item stays visible/audible for at least 1 second regardless of how short the configured delay is.
+- Fixed the chute auto-store feature never respecting its own blacklist: `ShipInventoryUpdated.Configurations.Configuration.Instance` is a public static field, not a property, so reflecting it via `GetProperty` always returned null and silently treated every item as non-blacklisted. Switched to `GetField`.
+
+### Changed
+
+- Documentation clarified across the README, in-code comments, and BepInEx config descriptions to consistently describe both auto-sell and the chute auto-store as triggered by pressing the drop key once, not holding it.
+
 ## [0.1.6] - 2026-08-28 (BETA - fix unverified in live multiplayer)
 
 ### Fixed
