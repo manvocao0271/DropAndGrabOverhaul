@@ -96,8 +96,9 @@ public partial class Plugin : BaseUnityPlugin
         if (player == null)
             return;
 
-        // ShipInventoryUpdated compatibility: hold the drop key while hovering its chute to
-        // store the whole inventory at once, if that mod happens to be installed
+        // ShipInventoryUpdated compatibility: pressing the drop key once while hovering its chute
+        // stores the whole inventory (including anything grabbed afterwards) until it's empty, if
+        // that mod happens to be installed
         if (ShipInventoryCompat.IsLoaded && ShipInventoryCompat.IsHoveringChute(player) && InputHandler.IsDropKeyPressed())
         {
             // Only start the coroutine if one isn't already running, otherwise it never
@@ -287,12 +288,37 @@ public partial class Plugin : BaseUnityPlugin
 
     private static System.Collections.IEnumerator StoreAllInChuteCoroutine(PlayerControllerB player)
     {
-        List<(int Slot, GrabbableObject Item)> items = ShipInventoryCompat.GetStorableItems(player);
         Vector3 chutePosition = player.hoveringOverTrigger.transform.position;
 
         int storedCount = 0;
-        foreach ((int slot, GrabbableObject item) in items)
+        // Re-check the player's slots every iteration (instead of snapshotting once up front) so
+        // items grabbed after this coroutine already started still get caught and stored too,
+        // rather than only ever processing whatever was held at the very start. Items are tracked
+        // by reference (not slot index) once claimed since their slot doesn't actually go null
+        // until FinalizeStoredItemAfterDelay runs later - without this, the same still-pending
+        // item would keep getting reselected every iteration until then.
+        var processedItems = new HashSet<GrabbableObject>();
+        while (true)
         {
+            List<(int Slot, GrabbableObject Item)> items = ShipInventoryCompat.GetStorableItems(player);
+
+            GrabbableObject? item = null;
+            int slot = -1;
+            foreach ((int candidateSlot, GrabbableObject candidateItem) in items)
+            {
+                if (!processedItems.Contains(candidateItem))
+                {
+                    item = candidateItem;
+                    slot = candidateSlot;
+                    break;
+                }
+            }
+
+            if (item == null)
+                break;
+
+            processedItems.Add(item);
+
             string itemName = item.itemProperties.itemName;
             player.SwitchToItemSlot(slot);
 

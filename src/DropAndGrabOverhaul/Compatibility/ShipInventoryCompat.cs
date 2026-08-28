@@ -119,7 +119,9 @@ internal static class ShipInventoryCompat
         try
         {
             Type? configType = Type.GetType("ShipInventoryUpdated.Configurations.Configuration, ShipInventoryUpdated");
-            object? instance = configType?.GetProperty("Instance", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
+            // Instance is a public static field, not a property - GetProperty silently returns
+            // null here, which was making every item look non-blacklisted.
+            object? instance = configType?.GetField("Instance", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
             object? chute = instance != null
                 ? configType!.GetField("Chute", BindingFlags.Public | BindingFlags.Instance)?.GetValue(instance)
                 : null;

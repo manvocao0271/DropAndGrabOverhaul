@@ -12,6 +12,7 @@ A Lethal Company mod that overhauls item dropping, grabbing, and selling: quickl
 * **Auto-sell at the company desk** — hold the drop key while looking at the counter to automatically place all sellable items on it, one at a time
 * **Sell blacklist** — configurable list of items that auto-sell should skip, separate from the drop blacklist
 * **Configurable grab delay** — lower the delay between picking up items (down to 0.01s) so you can grab in rapid succession
+* **ShipInventoryUpdated chute auto-store** *(optional, requires [ShipInventoryUpdated](https://thunderstore.io/c/lethal-company/))* — press the drop key once while hovering the ship's chute to automatically store your whole inventory, including anything you pick up afterward, until your slots are empty
 
 In all cases, the player's originally selected hotbar slot is restored afterward, even if it ends up empty.
 
@@ -36,6 +37,10 @@ Hold the drop key for a configurable duration to drop everything, including blac
 
 While looking at the company desk's counter, hold the drop key to sell all eligible scrap items from your inventory onto the counter.
 
+### ShipInventoryUpdated Chute
+
+Only available if the [ShipInventoryUpdated](https://thunderstore.io/c/lethal-company/) mod is also installed. Press the drop key once while hovering the chute's interact trigger. Each non-blacklisted item (in the mod's own .cfg file) is dropped and stored in sequence (with its own fall animation and drop sound) until your slots are empty, including any items you grab while the sequence is still running.
+
 ## Configuration
 
 Config is generated on first run under BepInEx's `config/` folder. Sections and keys:
@@ -54,6 +59,10 @@ GrabDelay                Delay in seconds between grabbing items, vanilla is 0.2
 [Sell]
 AutoSellInventory        Enables holding the drop key at the counter to auto-sell (default: true)
 SellBlacklistedItems     Comma-separated item names that auto-sell should skip
+
+[ShipInventoryUpdated]
+StoreDelayLanded         Delay in seconds between each item stored while the ship has landed on a moon (default: 1)
+StoreDelayOrbit          Delay in seconds between each item stored while the ship is in orbit (default: 0.2)
 ```
 
 ## Compatibility
@@ -62,11 +71,14 @@ DropAndGrabOverhaul is being designed with compatibility in mind.
 
 The inventory system will use an abstraction layer so that the core drop logic does not depend directly on a specific hotbar or inventory implementation.
 
+Implemented integrations:
+
+* ShipInventoryUpdated (soft dependency - see [Compatibility/ShipInventoryCompat.cs](src/DropAndGrabOverhaul/Compatibility/ShipInventoryCompat.cs))
+
 Planned integrations include:
 
 * HotbarPlus
 * ReservedItemSlot
-* Ship inventory chute mods
 
 Optional integrations will not be required for the base mod to function.
 
@@ -104,11 +116,13 @@ DropAndGrabOverhaul/
 ├── src/
 │   └── DropAndGrabOverhaul/
 │       ├── Compatibility/
+│       │   └── ShipInventoryCompat.cs
 │       ├── Configuration/
 │       │   ├── GrabConfiguration.cs
 │       │   ├── InputConfiguration.cs
 │       │   ├── ItemBlacklist.cs
-│       │   └── SellConfiguration.cs
+│       │   ├── SellConfiguration.cs
+│       │   └── ShipInventoryConfiguration.cs
 │       ├── Input/
 │       │   └── InputHandler.cs
 │       ├── Inventory/
@@ -137,7 +151,7 @@ DropAndGrabOverhaul/
 * [x] Implement optional grab cooldown removal
 * [ ] Add HotbarPlus compatibility
 * [ ] Add ReservedItemSlot compatibility
-* [ ] Add ship chute integration
+* [x] Add ship chute integration
 * [ ] Package for Thunderstore
 * [ ] Publish initial release
 
