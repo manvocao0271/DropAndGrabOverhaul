@@ -7,7 +7,7 @@
     <!-- This is the display name of your mod. Example: BepInEx Template -->
     <AssemblyTitle>DropAndGrabOverhaul</AssemblyTitle>
     <!-- This is the version number of your mod. -->
-    <Version>0.1.5</Version>
+    <Version>0.1.6</Version>
   </PropertyGroup>
 
   <!-- Mod files to copy to the relative BepInEx directory after build -->

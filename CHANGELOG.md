@@ -3,6 +3,12 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.1.6] - 2026-08-28 (BETA - fix unverified in live multiplayer)
+
+### Fixed
+
+- Fixed items still disappearing in the trailing restore after a double-tap drop-all. The coroutine's final `player.SwitchToItemSlot(originalSlot)` was unconditional and ran even when no items were actually dropped (blacklisted) or when the loop had timed out waiting for a network echo. Since `SwitchToItemSlot` unconditionally overwrites `currentlyHeldObjectServer`, this reproduced the exact same desync race the per-item wait was written to prevent: clobbering the reference for a throw still in flight (from a timeout-interrupted item in the loop above, or from an unrelated concurrent single-tap drop), causing `ThrowObjectClientRpc` to find a mismatch and skip placement. Now only restores the slot when both necessary (actually switched away from it) and safe (`currentlyHeldObjectServer` is already clear).
+
 ## [0.1.5] - 2026-08-27 (BETA - fix unverified in live multiplayer)
 
 ### Fixed
