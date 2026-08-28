@@ -10,6 +10,7 @@ using HarmonyLib;
 using DropAndGrabOverhaul.Input;
 using DropAndGrabOverhaul.Inventory;
 using DropAndGrabOverhaul.Configuration;
+using DropAndGrabOverhaul.Compatibility;
 using GameNetcodeStuff;
 using UnityEngine.InputSystem;
 
@@ -36,6 +37,7 @@ public partial class Plugin : BaseUnityPlugin
     private static UpdateRunner? runner;
     private static Coroutine? autoSellCoroutine;
     private static Coroutine? dropAllCoroutine;
+    private static Coroutine? storeInChuteCoroutine;
     private static bool isPlacingOnCounter;
     private static bool isDroppingAll;
 
@@ -88,6 +90,17 @@ public partial class Plugin : BaseUnityPlugin
         PlayerControllerB? player = StartOfRound.Instance?.localPlayerController;
         if (player == null)
             return;
+
+        // ShipInventoryUpdated compatibility: hold the drop key while hovering its chute to
+        // store the whole inventory at once, if that mod happens to be installed
+        if (ShipInventoryCompat.IsLoaded && ShipInventoryCompat.IsHoveringChute(player) && InputHandler.IsDropKeyPressed())
+        {
+            // Only start the coroutine if one isn't already running, otherwise it never
+            // gets past the first item's delay before being killed and restarted
+            if (storeInChuteCoroutine == null)
+                storeInChuteCoroutine = runner!.StartCoroutine(StoreAllInChuteCoroutine(player));
+            return;
+        }
 
         // Check if player is looking at the company desk's interact trigger (same condition
         // the vanilla game uses to show the "Sell item : [E]" hover tip)
@@ -265,6 +278,54 @@ public partial class Plugin : BaseUnityPlugin
         }
         Plugin.Log.LogInfo($"Sold {soldCount} items total");
         autoSellCoroutine = null;
+    }
+
+    private static System.Collections.IEnumerator StoreAllInChuteCoroutine(PlayerControllerB player)
+    {
+        List<(int Slot, GrabbableObject Item)> items = ShipInventoryCompat.GetStorableItems(player);
+        Vector3 chutePosition = player.hoveringOverTrigger.transform.position;
+
+        int storedCount = 0;
+        foreach ((int slot, GrabbableObject item) in items)
+        {
+            string itemName = item.itemProperties.itemName;
+            player.SwitchToItemSlot(slot);
+
+            // Detach the item from the player's hand and hand it off to GrabbableObject's own
+            // fall-curve logic (the same thing that runs when any item is dropped/placed in the
+            // world) so it visibly drops onto the chute and plays its drop sound on landing,
+            // instead of just vanishing straight out of the player's hand.
+            item.isHeld = false;
+            item.isPocketed = false;
+            item.parentObject = null;
+            item.transform.SetParent(null, true);
+            item.EnablePhysics(true);
+            item.EnableItemMeshes(true);
+            item.startFallingPosition = item.transform.position;
+            item.targetFloorPosition = chutePosition;
+            item.fallTime = 0f;
+
+            // Mirrors what DiscardHeldObject/PlaceGrabbableObject do when un-equipping an item -
+            // done manually here (instead of relying on DestroyItemInSlot's own equivalent logic
+            // below) since that only ever runs for whichever slot happens to be currentItemSlot.
+            HUDManager.Instance.itemSlotIcons[slot].enabled = false;
+            player.carryWeight = Mathf.Clamp(player.carryWeight - (item.itemProperties.weight - 1f), 1f, 10f);
+            player.isHoldingObject = false;
+            if (player.currentlyHeldObjectServer == item)
+                player.currentlyHeldObjectServer = null;
+
+            // Give it a beat to visibly land on the chute before it's whisked away into storage
+            yield return new WaitForSeconds(1f);
+
+            ShipInventoryCompat.FinalizeStoredItem(player, item, slot);
+            storedCount++;
+            Plugin.Log.LogInfo($"Stored item into ship inventory chute: {itemName}");
+        }
+
+        if (storedCount > 0)
+            StartOfRound.Instance.SendChangedWeightEvent();
+
+        storeInChuteCoroutine = null;
     }
 
     // Anything created in Plugin.Awake() gets destroyed by an early scene transition, so the
