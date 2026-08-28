@@ -4,6 +4,12 @@ Overhauls item dropping, grabbing, and selling in Lethal Company — drop or sel
 
 > **Status:** Early development
 
+## Design Philosophy
+
+Currently, players manually cycle through their inventory to drop their items and the same tedious work goes for selling on the company counter. Luckily, this does not have to be a permanent problem. The solution is to eliminate the monotonous actions of scrap dropping, grabbing, selling, and storing.
+
+DropAndGrabOverhaul provides a balanced (or at least not overly powerful) alternative to easily do these repetitive and time-consuming actions. This mod lets players immediately drop all looted scrap which favors more time spent in the building. Additionally, high quotas can often lead to large piles of scrap so near-instant grabbing to transport faster becomes a necessity. This is useful with support for the ShipInventoryUpdated mod that lets players store large quantities of scrap quicker.
+
 ## Features
 
 * **Double-tap drop** — tap the drop key once to instantly drop whatever you're holding; tap it again within the window to also drop the rest of your inventory, skipping any blacklisted items
