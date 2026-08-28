@@ -221,8 +221,17 @@ public partial class Plugin : BaseUnityPlugin
             }
         }
 
-        // Restore the original hotbar slot index, even if it's now empty
-        player.SwitchToItemSlot(originalSlot);
+        // Restore the original hotbar slot index, even if it's now empty - but only if we
+        // actually switched away from it and it's currently safe to do so. SwitchToItemSlot
+        // unconditionally overwrites currentlyHeldObjectServer, so calling it unconditionally
+        // here reproduces the exact same desync race the per-item wait above guards against:
+        // it would clobber the reference for a throw that's still in flight, whether that's
+        // our own timed-out item above, or a wholly unrelated drop (e.g. the immediate
+        // single-tap drop) that happened to be in progress concurrently on another item.
+        if (player.currentItemSlot != originalSlot && player.currentlyHeldObjectServer == null)
+        {
+            player.SwitchToItemSlot(originalSlot);
+        }
 
         Plugin.Log.LogInfo($"Dropped {droppedCount} items total");
         dropAllCoroutine = null;
