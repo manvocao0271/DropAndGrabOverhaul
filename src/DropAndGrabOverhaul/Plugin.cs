@@ -113,7 +113,7 @@ public partial class Plugin : BaseUnityPlugin
         DepositItemsDesk? desk = UnityEngine.Object.FindObjectOfType<DepositItemsDesk>();
         bool atDesk = desk != null && desk.triggerScript != null && player.hoveringOverTrigger == desk.triggerScript;
 
-        // Auto-sell inventory if enabled and drop key is held near the counter
+        // Auto-sell inventory if enabled and drop key is pressed near the counter
         if (SellConfiguration.AutoSellInventory && atDesk && InputHandler.IsDropKeyPressed() && desk != null)
         {
             // Only start the coroutine if one isn't already running, otherwise it never

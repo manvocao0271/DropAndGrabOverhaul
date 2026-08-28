@@ -9,7 +9,7 @@ A Lethal Company mod that overhauls item dropping, grabbing, and selling: quickl
 * **Double-tap drop** — tap the drop key (G) to drop the held item immediately; tap again within the window to also drop the rest of your eligible items, skipping blacklisted ones
 * **Force drop** — hold the drop key to drop everything, ignoring the blacklist
 * **Drop blacklist** — configurable list of items that are never dropped by double-tap/force-drop
-* **Auto-sell at the company desk** — hold the drop key while looking at the counter to automatically place all sellable items on it, one at a time
+* **Auto-sell at the company desk** — press the drop key once while looking at the counter to automatically place all sellable items on it, one at a time
 * **Sell blacklist** — configurable list of items that auto-sell should skip, separate from the drop blacklist
 * **Configurable grab delay** — lower the delay between picking up items (down to 0.01s) so you can grab in rapid succession
 * **ShipInventoryUpdated chute auto-store** *(optional, requires [ShipInventoryUpdated](https://thunderstore.io/c/lethal-company/))* — press the drop key once while hovering the ship's chute to automatically store your whole inventory, including anything you pick up afterward, until your slots are empty
@@ -35,7 +35,7 @@ Hold the drop key for a configurable duration to drop everything, including blac
 
 ### Auto-Sell
 
-While looking at the company desk's counter, hold the drop key to sell all eligible scrap items from your inventory onto the counter.
+While looking at the company desk's counter, press the drop key once to put all eligible scrap items from your inventory onto the counter.
 
 ### ShipInventoryUpdated Chute
 
@@ -57,7 +57,7 @@ BlacklistedItems         Comma-separated item names never dropped by double-tap/
 GrabDelay                Delay in seconds between grabbing items, vanilla is 0.2 (default: 0.01)
 
 [Sell]
-AutoSellInventory        Enables holding the drop key at the counter to auto-sell (default: true)
+AutoSellInventory        Enables pressing the drop key once at the counter to auto-sell (default: true)
 SellBlacklistedItems     Comma-separated item names that auto-sell should skip
 
 [ShipInventoryUpdated]
@@ -149,8 +149,6 @@ DropAndGrabOverhaul/
 * [x] Implement force-drop (hold key, ignores blacklist)
 * [x] Implement auto-sell at the company desk with its own blacklist
 * [x] Implement optional grab cooldown removal
-* [ ] Add HotbarPlus compatibility
-* [ ] Add ReservedItemSlot compatibility
 * [x] Add ship chute integration
 * [ ] Package for Thunderstore
 * [ ] Publish initial release

@@ -17,7 +17,7 @@ namespace DropAndGrabOverhaul.Configuration
                 section: "Sell",
                 key: "AutoSellInventory",
                 defaultValue: true,
-                description: "Holding the drop key while at the company counter will automatically sell all items in the inventory."
+                description: "Pressing the drop key once while at the company counter will automatically put all items in the inventory."
             );
 
             sellBlacklistConfig = config.Bind(
