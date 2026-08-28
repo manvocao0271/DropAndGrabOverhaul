@@ -41,6 +41,10 @@ public partial class Plugin : BaseUnityPlugin
     private static bool isPlacingOnCounter;
     private static bool isDroppingAll;
 
+    // Floor for how long a chute-stored item stays visible/audible before despawning, regardless
+    // of how short the configured pacing delay is, so its drop SFX never gets cut off.
+    private const float MinSettleTime = 1f;
+
     private void Awake()
     {
         // BepInEx gives us a logger which we can use to log information.
@@ -52,6 +56,7 @@ public partial class Plugin : BaseUnityPlugin
         InputConfiguration.Initialize(Config);
         GrabConfiguration.Initialize(Config);
         SellConfiguration.Initialize(Config);
+        ShipInventoryConfiguration.Initialize(Config);
 
         // Apply Harmony patch to intercept drop behavior
         // Our patches are annotated directly on their methods with no wrapping class carrying its
@@ -314,18 +319,29 @@ public partial class Plugin : BaseUnityPlugin
             if (player.currentlyHeldObjectServer == item)
                 player.currentlyHeldObjectServer = null;
 
-            // Give it a beat to visibly land on the chute before it's whisked away into storage
-            yield return new WaitForSeconds(1f);
-
-            ShipInventoryCompat.FinalizeStoredItem(player, item, slot);
+            // Pacing before the next item starts falling can be configured very short, but the
+            // item itself still needs enough time on screen for its fall animation and drop SFX to
+            // finish before it's destroyed - so that part always waits at least MinSettleTime.
+            float pacingDelay = StartOfRound.Instance.shipHasLanded ? ShipInventoryConfiguration.StoreDelayLanded : ShipInventoryConfiguration.StoreDelayOrbit;
+            float settleDelay = Mathf.Max(pacingDelay, MinSettleTime);
+            runner!.StartCoroutine(FinalizeStoredItemAfterDelay(player, item, slot, itemName, settleDelay));
             storedCount++;
-            Plugin.Log.LogInfo($"Stored item into ship inventory chute: {itemName}");
+
+            yield return new WaitForSeconds(pacingDelay);
         }
 
         if (storedCount > 0)
             StartOfRound.Instance.SendChangedWeightEvent();
 
         storeInChuteCoroutine = null;
+    }
+
+    private static System.Collections.IEnumerator FinalizeStoredItemAfterDelay(PlayerControllerB player, GrabbableObject item, int slot, string itemName, float delay)
+    {
+        yield return new WaitForSeconds(delay);
+
+        ShipInventoryCompat.FinalizeStoredItem(player, item, slot);
+        Plugin.Log.LogInfo($"Stored item into ship inventory chute: {itemName}");
     }
 
     // Anything created in Plugin.Awake() gets destroyed by an early scene transition, so the
