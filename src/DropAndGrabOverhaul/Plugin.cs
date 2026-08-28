@@ -50,10 +50,24 @@ public partial class Plugin : BaseUnityPlugin
     // up and logging it as a potential leftover duplicate (see ProcessChuteFinalizeQueue).
     private const float ChuteDestroyConfirmTimeout = 5f;
 
+    // If the item hasn't despawned this long after the destroy sync was (re)sent, assume that
+    // attempt's ServerRpc/ClientRpc round trip was lost and resend it, rather than waiting out
+    // the full ChuteDestroyConfirmTimeout on a single lost packet.
+    private const float ChuteDestroyRetryInterval = 1f;
+    private const int ChuteDestroyMaxRetries = 3;
+
     // Items waiting to be added to the ship inventory and despawned once their settle time is up,
     // processed one at a time by ProcessChuteFinalizeQueue regardless of how fast new items are
     // still falling in StoreAllInChuteCoroutine.
     private static readonly Queue<(GrabbableObject Item, int Slot, string ItemName, float ReadyAtTime)> chuteFinalizeQueue = new();
+
+    // Reflection handle for PlayerControllerB's private SwitchToItemSlot(int, GrabbableObject) -
+    // used to re-equip an item into HotbarPlus's "extra" slots right before destroying it (see
+    // ProcessChuteFinalizeQueue). Vanilla's only other caller of DestroyItemInSlotAndSync
+    // (ShipInventoryUpdated.Scripts.ChuteStore.StoreHeldItem) always operates on the currently
+    // held item, so this mirrors that precondition instead of assuming destroy works unequipped.
+    private static readonly System.Reflection.MethodInfo? SwitchToItemSlotMethod =
+        typeof(PlayerControllerB).GetMethod("SwitchToItemSlot", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
 
     private void Awake()
     {
@@ -339,7 +353,16 @@ public partial class Plugin : BaseUnityPlugin
             processedItems.Add(item);
 
             string itemName = item.itemProperties.itemName;
-            player.SwitchToItemSlot(slot);
+
+            // Deliberately NOT calling player.SwitchToItemSlot(slot) here - it's client-local-only
+            // (never networked), and its equip/pocket side effects (currentItemSlot,
+            // isHoldingObject, currentlyHeldObjectServer) getting rewritten once per item in rapid
+            // succession while ProcessChuteFinalizeQueue's DestroyItemInSlotAndSync for an earlier
+            // item is still in flight is exactly the kind of local-only desync that caused the
+            // earlier drop-all visual bug (see CLAUDE.md). Since everything EquipItem would have
+            // done for us is already handled manually below, skipping it entirely avoids the
+            // interaction altogether rather than trying to time around it.
+            item.playerHeldBy = null;
 
             // Detach the item from the player's hand and hand it off to GrabbableObject's own
             // fall-curve logic (the same thing that runs when any item is dropped/placed in the
@@ -428,19 +451,91 @@ public partial class Plugin : BaseUnityPlugin
             if (item == null)
                 continue;
 
-            ShipInventoryCompat.AddToShipInventory(item, player);
+            try
+            {
+                ShipInventoryCompat.AddToShipInventory(item, player);
+            }
+            catch (System.Exception e)
+            {
+                Plugin.Log.LogWarning($"Adding '{itemName}' to the ship inventory threw ({e.GetType().Name}: {e.Message}) - it was left in the player's item slots instead of being destroyed.");
+                continue;
+            }
 
-            if (!ShipInventoryCompat.TryDestroyItemInSlot(player, item, slot))
+            // Vanilla's DestroyItemInSlot can intermittently NRE (ItemSlots[itemSlot] reads null
+            // inside it despite reading non-null everywhere just beforehand) unless the item
+            // being destroyed is also the currently-equipped one - ShipInventoryUpdated's own
+            // ChuteStore.StoreHeldItem (the only other caller of DestroyItemInSlotAndSync in the
+            // wild) always operates on currentlyHeldObjectServer/currentItemSlot, never on an
+            // arbitrary unequipped slot. Originally this was only done for HotbarPlus's "extra"
+            // slots (>= vanilla's native 4), since only those had reliably reproduced the NRE in
+            // testing - but a live test then hit the exact same NRE on native slots too (while
+            // the extra slots, now re-equipped first, succeeded), so this apparently isn't an
+            // extra-slot-specific race and needs to run for every item, not just extra ones.
+            // Re-equip via SwitchToItemSlot right before destroying to match that precondition.
+            // SwitchToItemSlot is client-local-only (see CLAUDE.md gotcha #5), but that's fine
+            // here: this coroutine is already fully serialized one item at a time, so there's no
+            // other slot switch racing against this one.
+            try
+            {
+                // Undo the manual carryWeight subtraction StoreAllInChuteCoroutine already did
+                // when detaching this item - re-equipping below makes vanilla's own
+                // DestroyItemInSlot subtract it again via its isHoldingObject block, so without
+                // this the player would get charged for the item's weight twice.
+                player.carryWeight = Mathf.Clamp(player.carryWeight + (item.itemProperties.weight - 1f), 1f, 10f);
+                SwitchToItemSlotMethod?.Invoke(player, new object?[] { slot, null });
+            }
+            catch (System.Exception e)
+            {
+                Plugin.Log.LogWarning($"Could not re-equip '{itemName}' into slot {slot} before destroying it: {e.GetType().Name}: {e.Message}");
+            }
+
+            // DestroyItemInSlotAndSync (vanilla) can throw - observed in the wild as a
+            // NullReferenceException inside DestroyItemInSlot when some other mod (e.g. one
+            // that resizes/reshuffles ItemSlots for extra hotbar slots) mutates the slot out
+            // from under it between our own check above and its internal one. Since this runs
+            // inside a coroutine, an uncaught exception here would silently kill
+            // ProcessChuteFinalizeQueue entirely - abandoning every item still in the queue
+            // (already-hidden but never destroyed) and leaving chuteFinalizeQueueCoroutine
+            // stuck non-null forever. Catching it here keeps the queue alive for the rest of
+            // the items instead.
+            bool destroyStarted;
+            int actualSlot = -1;
+            try
+            {
+                destroyStarted = ShipInventoryCompat.TryDestroyItemInSlot(player, item, slot, out actualSlot);
+            }
+            catch (System.Exception e)
+            {
+                Plugin.Log.LogWarning($"Destroying '{itemName}' threw ({e.GetType().Name}: {e.Message}, NetworkObject null: {item.NetworkObject == null}, IsSpawned: {item.NetworkObject != null && item.NetworkObject.IsSpawned}) after it was already added to the ship inventory - it may remain visible/pickup-able as a duplicate.");
+                continue;
+            }
+
+            if (!destroyStarted)
             {
                 Plugin.Log.LogWarning($"Couldn't find '{itemName}' in the player's item slots to destroy after storing it - it may remain visible/pickup-able as a duplicate.");
                 continue;
             }
 
             float elapsed = 0f;
+            int retries = 0;
             while (item != null && elapsed < ChuteDestroyConfirmTimeout)
             {
                 yield return null;
                 elapsed += Time.deltaTime;
+
+                if (item != null && retries < ChuteDestroyMaxRetries && elapsed >= (retries + 1) * ChuteDestroyRetryInterval)
+                {
+                    retries++;
+                    Plugin.Log.LogWarning($"'{itemName}' hasn't despawned {elapsed:F1}s after being stored - resending destroy sync (attempt {retries}/{ChuteDestroyMaxRetries})");
+                    try
+                    {
+                        ShipInventoryCompat.ResendDestroySync(player, actualSlot);
+                    }
+                    catch (System.Exception e)
+                    {
+                        Plugin.Log.LogWarning($"Resending destroy sync for '{itemName}' threw ({e.GetType().Name}: {e.Message}) - giving up on despawning it this attempt.");
+                    }
+                }
             }
 
             if (item != null)

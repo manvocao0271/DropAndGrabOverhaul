@@ -98,13 +98,13 @@ internal static class ShipInventoryCompat
     /// index went stale across a delay) - in that case nothing was destroyed, and the caller
     /// should not expect the item to ever disappear.
     /// </returns>
-    public static bool TryDestroyItemInSlot(PlayerControllerB player, GrabbableObject item, int slot)
+    public static bool TryDestroyItemInSlot(PlayerControllerB player, GrabbableObject item, int slot, out int actualSlot)
     {
         // The slot captured when this item started falling might not hold it anymore by the time
         // this actually runs - resolve its real current slot instead of blindly trusting the
         // stale index, so this can never end up destroying whatever unrelated item happens to
         // occupy that slot number now.
-        int actualSlot = slot >= 0 && slot < player.ItemSlots.Length && player.ItemSlots[slot] == item
+        actualSlot = slot >= 0 && slot < player.ItemSlots.Length && player.ItemSlots[slot] == item
             ? slot
             : Array.IndexOf(player.ItemSlots, item);
 
@@ -113,6 +113,20 @@ internal static class ShipInventoryCompat
 
         player.DestroyItemInSlotAndSync(actualSlot);
         return true;
+    }
+
+    /// <summary>
+    /// Resends just the network half of DestroyItemInSlotAndSync (the ServerRpc that eventually
+    /// gets the host to despawn the item's NetworkObject) without re-running its local-only half,
+    /// which already ran once as part of the original <see cref="TryDestroyItemInSlot"/> call and
+    /// would null-ref on grabbableObject.NetworkObject.Despawn() if repeated after the slot's
+    /// already been cleared locally - this is only safe to call once TryDestroyItemInSlot has
+    /// already succeeded for actualSlot, to recover from the initial RPC round trip silently
+    /// getting lost.
+    /// </summary>
+    public static void ResendDestroySync(PlayerControllerB player, int actualSlot)
+    {
+        player.DestroyItemInSlotServerRpc(actualSlot);
     }
 
     // Mirrors ShipInventoryUpdated.Helpers.API.InteractionHelper.IsAllowed (internal, and only
