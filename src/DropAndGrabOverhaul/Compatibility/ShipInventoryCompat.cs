@@ -58,13 +58,16 @@ internal static class ShipInventoryCompat
     /// <summary>
     /// Adds a single item's data to the ship inventory, mirroring what
     /// ShipInventoryUpdated.Scripts.ChuteStore.StoreHeldItem does for a single held item when
-    /// holding [E] on the chute. Assumes the caller has already handled any visual/weight/HUD
-    /// side effects for taking the item out of the player's hands - this only owns the
-    /// ShipInventoryUpdated-side bookkeeping. Split out from the actual despawn (see
-    /// <see cref="TryDestroyItemInSlot"/>) so a caller retrying/awaiting the despawn never risks
-    /// adding the same item's data twice.
+    /// holding [E] on the chute. Called host-side, immediately before despawning the item (see
+    /// Plugin.HostFinalizeChuteItem) - assumes the caller has already handled any visual/weight/
+    /// HUD side effects for taking the item out of the player's hands, this only owns the
+    /// ShipInventoryUpdated-side bookkeeping. Returns the added entry so the caller can pass it to
+    /// <see cref="RemoveFromShipInventory"/> to roll this back if the despawn itself then throws -
+    /// otherwise ShipInventoryUpdated's own Inventory.Count keeps counting a duplicate/undespawned
+    /// item forever, which eventually blocks the chute from accepting anything else once
+    /// Inventory.Count reaches the user-configured MaxItemCount (ChuteTrigger.HasEnoughSpace).
     /// </summary>
-    public static void AddToShipInventory(GrabbableObject item, PlayerControllerB player)
+    public static ShipInventoryUpdated.Objects.ItemData AddToShipInventory(GrabbableObject item, PlayerControllerB player)
     {
         // Using ItemData's public constructor directly instead of ShipInventoryUpdated's own
         // (internal) ItemConverter.Convert - loses its BeltBagItem unpacking special-case,
@@ -79,54 +82,20 @@ internal static class ShipInventoryCompat
         item.isInShipRoom = false;
         item.scrapPersistedThroughRounds = true;
         player.SetItemInElevator(true, true, item);
+
+        return data;
     }
 
     /// <summary>
-    /// Despawns an already-detached item by slot index, mirroring what
-    /// ShipInventoryUpdated.Scripts.ChuteStore.StoreHeldItem does. Unlike DiscardHeldObject, this
-    /// doesn't touch currentlyHeldObjectServer, so there's no equip-first/network-echo race to
-    /// worry about here (see repo memory on the drop-all netcode race for contrast) - but the
-    /// despawn itself still depends on a client -> host -> everyone network round trip
-    /// (DestroyItemInSlotAndSync only despawns immediately for the host; every other client
-    /// waits on that round trip), which can silently fail to complete under lag. Callers are
-    /// expected to wait for the item to actually go away and log/handle it if it doesn't (see
-    /// StoreAllInChuteCoroutine's queue in Plugin.cs), rather than assuming this call alone is
-    /// enough.
+    /// Undoes a previous <see cref="AddToShipInventory"/> call whose item never actually
+    /// despawned (see ProcessChuteFinalizeQueue in Plugin.cs) - without this, a single item that
+    /// fails to despawn permanently inflates ShipInventoryUpdated's Inventory.Count, which
+    /// eventually makes ChuteTrigger.HasEnoughSpace return false for every player and locks
+    /// everyone out of storing anything else in the chute for the rest of the save.
     /// </summary>
-    /// <returns>
-    /// False if the item could no longer be found in any of the player's slots (e.g. the slot
-    /// index went stale across a delay) - in that case nothing was destroyed, and the caller
-    /// should not expect the item to ever disappear.
-    /// </returns>
-    public static bool TryDestroyItemInSlot(PlayerControllerB player, GrabbableObject item, int slot, out int actualSlot)
+    public static void RemoveFromShipInventory(ShipInventoryUpdated.Objects.ItemData data)
     {
-        // The slot captured when this item started falling might not hold it anymore by the time
-        // this actually runs - resolve its real current slot instead of blindly trusting the
-        // stale index, so this can never end up destroying whatever unrelated item happens to
-        // occupy that slot number now.
-        actualSlot = slot >= 0 && slot < player.ItemSlots.Length && player.ItemSlots[slot] == item
-            ? slot
-            : Array.IndexOf(player.ItemSlots, item);
-
-        if (actualSlot < 0)
-            return false;
-
-        player.DestroyItemInSlotAndSync(actualSlot);
-        return true;
-    }
-
-    /// <summary>
-    /// Resends just the network half of DestroyItemInSlotAndSync (the ServerRpc that eventually
-    /// gets the host to despawn the item's NetworkObject) without re-running its local-only half,
-    /// which already ran once as part of the original <see cref="TryDestroyItemInSlot"/> call and
-    /// would null-ref on grabbableObject.NetworkObject.Despawn() if repeated after the slot's
-    /// already been cleared locally - this is only safe to call once TryDestroyItemInSlot has
-    /// already succeeded for actualSlot, to recover from the initial RPC round trip silently
-    /// getting lost.
-    /// </summary>
-    public static void ResendDestroySync(PlayerControllerB player, int actualSlot)
-    {
-        player.DestroyItemInSlotServerRpc(actualSlot);
+        ShipInventoryUpdated.Scripts.Inventory.Remove(new[] { data });
     }
 
     // Mirrors ShipInventoryUpdated.Helpers.API.InteractionHelper.IsAllowed (internal, and only

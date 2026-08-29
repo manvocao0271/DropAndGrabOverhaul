@@ -3,6 +3,24 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.0-beta] - 2026-08-29
+
+### Changed (Major Redesign)
+
+- **Chute auto-store despawn mechanism completely redesigned for non-host reliability**: replaced the fragile `PlayerControllerB.DestroyItemInSlotAndSync` RPC round-trip (which failed intermittently for non-host clients under lag) with a host-authoritative finalize step. All clients still initiate the store, but finalization (adding to ship inventory + despawning the `NetworkObject`) now happens entirely on the host via a lightweight `CustomMessagingManager` named message, sidestepping the ownership constraints that made `DestroyItemInSlotAndSync` unreliable for non-owners. The host routes despawn requests through `NetworkObject.Despawn()` (which requires only `IsServer`, never ownership) instead of relying on vanilla's ownership-gated `DestroyItemInSlotServerRpc`.
+
+### Fixed
+
+- Fixed hotbar freeze when picking up new items while chute auto-store is running: previously, if you grabbed a new item while `StoreAllInChuteCoroutine` was detaching items on the same frame, the detach logic would null `player.currentlyHeldObjectServer` while vanilla's own `GrabObject()` coroutine was mid-animation waiting for that field to match the newly-grabbed item, permanently breaking the wait condition and freezing `isGrabbingObjectAnimation` (blocking scroll/drop/activate for the rest of the session). Now the auto-store sequence waits for any in-flight grab animation to complete before detaching each item.
+- Fixed ghost HUD item name appearing without visual hand or drop ability while auto-store runs: same root cause as the hotbar freeze—eliminated by the grab-animation guard above.
+- Fixed ship inventory count inflation when chute-store items fail to despawn: when an item's despawn RPC silently failed, the item was already registered in the ship inventory (via `Inventory.Add`) but never physically removed, permanently inflating `Inventory.Count` and eventually blocking the chute from accepting new items for the whole lobby once the cap was hit. The new host-only finalize design keeps `Inventory.Add` and `Despawn()` back-to-back in a single uninterrupted host-local call with a try/catch rollback, so a failed despawn never orphans an inventory entry.
+- Removed the now-obsolete `ClearStaleSlotIcon` workaround and `GrabAnimationWaitTimeout` from `ProcessChuteFinalizeQueue` (it had been waiting for `isGrabbingObjectAnimation` to clear, but the real race was in `StoreAllInChuteCoroutine`'s detach step, which is now guarded correctly at its source).
+
+### Build Verification
+
+- ✅ Compiles with 0 errors/warnings
+- ⏳ **UNVERIFIED in live multiplayer** — build-verified only; needs testing with multiple players to confirm non-host despawn reliability and absence of ghost items
+
 ## [0.1.9] - 2026-08-28
 
 ### Fixed

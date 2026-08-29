@@ -13,6 +13,7 @@ using DropAndGrabOverhaul.Configuration;
 using DropAndGrabOverhaul.Compatibility;
 using GameNetcodeStuff;
 using UnityEngine.InputSystem;
+using Unity.Netcode;
 
 namespace DropAndGrabOverhaul;
 
@@ -50,24 +51,28 @@ public partial class Plugin : BaseUnityPlugin
     // up and logging it as a potential leftover duplicate (see ProcessChuteFinalizeQueue).
     private const float ChuteDestroyConfirmTimeout = 5f;
 
-    // If the item hasn't despawned this long after the destroy sync was (re)sent, assume that
-    // attempt's ServerRpc/ClientRpc round trip was lost and resend it, rather than waiting out
-    // the full ChuteDestroyConfirmTimeout on a single lost packet.
+    // If the item hasn't despawned this long after the finalize request was (re)sent, assume that
+    // message was lost and resend it, rather than waiting out the full ChuteDestroyConfirmTimeout
+    // on a single lost packet.
     private const float ChuteDestroyRetryInterval = 1f;
     private const int ChuteDestroyMaxRetries = 3;
+
+    // How long to wait for a real, player-initiated grab (isGrabbingObjectAnimation) to finish
+    // before giving up and processing the item anyway (see StoreAllInChuteCoroutine) - bounds the
+    // wait so a stuck flag from some unrelated bug can't hang the auto-store sequence forever.
+    private const float GrabAnimationWaitTimeout = 3f;
+
+    // Named message used to ask the host to add a chute-stored item to the ship inventory and
+    // despawn it (see HostFinalizeChuteItem) - despawning a NetworkObject only ever requires
+    // being the server, never ownership of the object, so routing this through the host avoids
+    // the unreliable client -> host -> everyone DestroyItemInSlotAndSync round trip non-host
+    // owners depended on before.
+    private const string ChuteFinalizeMessageName = "DropAndGrabOverhaul_ChuteFinalize";
 
     // Items waiting to be added to the ship inventory and despawned once their settle time is up,
     // processed one at a time by ProcessChuteFinalizeQueue regardless of how fast new items are
     // still falling in StoreAllInChuteCoroutine.
     private static readonly Queue<(GrabbableObject Item, int Slot, string ItemName, float ReadyAtTime)> chuteFinalizeQueue = new();
-
-    // Reflection handle for PlayerControllerB's private SwitchToItemSlot(int, GrabbableObject) -
-    // used to re-equip an item into HotbarPlus's "extra" slots right before destroying it (see
-    // ProcessChuteFinalizeQueue). Vanilla's only other caller of DestroyItemInSlotAndSync
-    // (ShipInventoryUpdated.Scripts.ChuteStore.StoreHeldItem) always operates on the currently
-    // held item, so this mirrors that precondition instead of assuming destroy works unequipped.
-    private static readonly System.Reflection.MethodInfo? SwitchToItemSlotMethod =
-        typeof(PlayerControllerB).GetMethod("SwitchToItemSlot", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
 
     private void Awake()
     {
@@ -350,6 +355,22 @@ public partial class Plugin : BaseUnityPlugin
             if (item == null)
                 break;
 
+            // A brand-new grab can already show up in ItemSlots/GetStorableItems before vanilla's
+            // own GrabObject() coroutine has finished waiting out its animation and cleared
+            // isGrabbingObjectAnimation. Detaching it out from under that coroutine right now
+            // (below, via currentlyHeldObjectServer = null) would break the condition that
+            // coroutine's own wait loop is watching (`currentlyGrabbingObject != currentlyHeldObjectServer`)
+            // and it would never become true again - leaving isGrabbingObjectAnimation stuck true
+            // forever, which freezes the hotbar since scrolling/dropping/activating all gate on
+            // that flag. Wait it out first, bounded so a stuck flag can't hang this coroutine
+            // forever either.
+            float grabWait = 0f;
+            while (player.isGrabbingObjectAnimation && player.currentlyGrabbingObject == item && grabWait < GrabAnimationWaitTimeout)
+            {
+                yield return null;
+                grabWait += Time.deltaTime;
+            }
+
             processedItems.Add(item);
 
             string itemName = item.itemProperties.itemName;
@@ -432,20 +453,16 @@ public partial class Plugin : BaseUnityPlugin
         return ShipInventoryConfiguration.StopOnJump && (player.isJumping || player.isFallingFromJump || player.isFallingNoJump);
     }
 
-    // Finalizes (adds to the ship inventory, then despawns) queued chute items one at a time,
-    // regardless of how fast StoreAllInChuteCoroutine paces new items falling. Keeping this
-    // serialized - never more than one item's destroy in flight at once - avoids overlapping
-    // DestroyItemInSlotAndSync network round-trips stepping on each other's slot/held-item state
-    // on the host. Also waits to confirm the despawn actually lands instead of assuming it always
-    // does, since that depends on a client -> host -> everyone round trip that can silently fail
-    // under lag - without this, a failed despawn left the item's data stored in the ship
-    // inventory while its physical pickup stayed behind in the world, duplicating it with no
-    // trace in the log.
+    // Finalizes queued chute items one at a time, regardless of how fast StoreAllInChuteCoroutine
+    // paces new items falling. Actually adding to the ship inventory and despawning now happens
+    // entirely on the host (see HostFinalizeChuteItem) - this only sends the request and waits to
+    // confirm the item actually disappeared, resending if it hasn't within a timeout, since a
+    // reliable-channel message can still be lost if e.g. this client's connection is dying.
     private static System.Collections.IEnumerator ProcessChuteFinalizeQueue(PlayerControllerB player)
     {
         while (chuteFinalizeQueue.Count > 0)
         {
-            (GrabbableObject item, int slot, string itemName, float readyAtTime) = chuteFinalizeQueue.Dequeue();
+            (GrabbableObject item, int _, string itemName, float readyAtTime) = chuteFinalizeQueue.Dequeue();
 
             float wait = readyAtTime - Time.time;
             if (wait > 0f)
@@ -454,67 +471,13 @@ public partial class Plugin : BaseUnityPlugin
             if (item == null)
                 continue;
 
-            try
-            {
-                ShipInventoryCompat.AddToShipInventory(item, player);
-            }
-            catch (System.Exception e)
-            {
-                Plugin.Log.LogWarning($"Adding '{itemName}' to the ship inventory threw ({e.GetType().Name}: {e.Message}) - it was left in the player's item slots instead of being destroyed.");
-                continue;
-            }
+            // Mirrors the weight subtraction vanilla's DestroyItemInSlot would normally do -
+            // nothing else does this now that the host, not this client, is what actually
+            // destroys the item (see StoreAllInChuteCoroutine, which deliberately leaves
+            // carryWeight untouched at detach time).
+            player.carryWeight = Mathf.Clamp(player.carryWeight - (item.itemProperties.weight - 1f), 1f, 10f);
 
-            // Vanilla's DestroyItemInSlot can intermittently NRE (ItemSlots[itemSlot] reads null
-            // inside it despite reading non-null everywhere just beforehand) unless the item
-            // being destroyed is also the currently-equipped one - ShipInventoryUpdated's own
-            // ChuteStore.StoreHeldItem (the only other caller of DestroyItemInSlotAndSync in the
-            // wild) always operates on currentlyHeldObjectServer/currentItemSlot, never on an
-            // arbitrary unequipped slot. Originally this was only done for HotbarPlus's "extra"
-            // slots (>= vanilla's native 4), since only those had reliably reproduced the NRE in
-            // testing - but a live test then hit the exact same NRE on native slots too (while
-            // the extra slots, now re-equipped first, succeeded), so this apparently isn't an
-            // extra-slot-specific race and needs to run for every item, not just extra ones.
-            // Re-equip via SwitchToItemSlot right before destroying to match that precondition -
-            // this is also what makes DestroyItemInSlot's own carryWeight subtraction fire (see
-            // StoreAllInChuteCoroutine, which deliberately leaves carryWeight untouched at detach
-            // time). SwitchToItemSlot is client-local-only (see CLAUDE.md gotcha #5), but that's
-            // fine here: this coroutine is already fully serialized one item at a time, so there's
-            // no other slot switch racing against this one.
-            try
-            {
-                SwitchToItemSlotMethod?.Invoke(player, new object?[] { slot, null });
-            }
-            catch (System.Exception e)
-            {
-                Plugin.Log.LogWarning($"Could not re-equip '{itemName}' into slot {slot} before destroying it: {e.GetType().Name}: {e.Message}");
-            }
-
-            // DestroyItemInSlotAndSync (vanilla) can throw - observed in the wild as a
-            // NullReferenceException inside DestroyItemInSlot when some other mod (e.g. one
-            // that resizes/reshuffles ItemSlots for extra hotbar slots) mutates the slot out
-            // from under it between our own check above and its internal one. Since this runs
-            // inside a coroutine, an uncaught exception here would silently kill
-            // ProcessChuteFinalizeQueue entirely - abandoning every item still in the queue
-            // (already-hidden but never destroyed) and leaving chuteFinalizeQueueCoroutine
-            // stuck non-null forever. Catching it here keeps the queue alive for the rest of
-            // the items instead.
-            bool destroyStarted;
-            int actualSlot = -1;
-            try
-            {
-                destroyStarted = ShipInventoryCompat.TryDestroyItemInSlot(player, item, slot, out actualSlot);
-            }
-            catch (System.Exception e)
-            {
-                Plugin.Log.LogWarning($"Destroying '{itemName}' threw ({e.GetType().Name}: {e.Message}, NetworkObject null: {item.NetworkObject == null}, IsSpawned: {item.NetworkObject != null && item.NetworkObject.IsSpawned}) after it was already added to the ship inventory - it may remain visible/pickup-able as a duplicate.");
-                continue;
-            }
-
-            if (!destroyStarted)
-            {
-                Plugin.Log.LogWarning($"Couldn't find '{itemName}' in the player's item slots to destroy after storing it - it may remain visible/pickup-able as a duplicate.");
-                continue;
-            }
+            SendChuteFinalizeRequest(item);
 
             float elapsed = 0f;
             int retries = 0;
@@ -526,25 +489,95 @@ public partial class Plugin : BaseUnityPlugin
                 if (item != null && retries < ChuteDestroyMaxRetries && elapsed >= (retries + 1) * ChuteDestroyRetryInterval)
                 {
                     retries++;
-                    Plugin.Log.LogWarning($"'{itemName}' hasn't despawned {elapsed:F1}s after being stored - resending destroy sync (attempt {retries}/{ChuteDestroyMaxRetries})");
-                    try
-                    {
-                        ShipInventoryCompat.ResendDestroySync(player, actualSlot);
-                    }
-                    catch (System.Exception e)
-                    {
-                        Plugin.Log.LogWarning($"Resending destroy sync for '{itemName}' threw ({e.GetType().Name}: {e.Message}) - giving up on despawning it this attempt.");
-                    }
+                    Plugin.Log.LogWarning($"'{itemName}' hasn't despawned {elapsed:F1}s after requesting chute storage - resending finalize request (attempt {retries}/{ChuteDestroyMaxRetries})");
+                    SendChuteFinalizeRequest(item);
                 }
             }
 
             if (item != null)
-                Plugin.Log.LogWarning($"'{itemName}' did not despawn within {ChuteDestroyConfirmTimeout}s of being stored - it may remain visible/pickup-able as a duplicate.");
+                Plugin.Log.LogWarning($"'{itemName}' did not despawn within {ChuteDestroyConfirmTimeout}s of requesting chute storage - it may remain visible/pickup-able; try storing it manually via the chute's [E] interact.");
             else
-                Plugin.Log.LogInfo($"Stored item into ship inventory chute: {itemName}");
+                Plugin.Log.LogInfo($"Confirmed '{itemName}' was stored into the ship inventory chute.");
         }
 
         chuteFinalizeQueueCoroutine = null;
+    }
+
+    // Asks the host to add the item to the ship inventory and despawn it (see
+    // HostFinalizeChuteItem). Safe to call more than once for the same item, e.g. a retry - the
+    // host's handler is a no-op for anything already despawned. Skips the network message
+    // entirely when this client already is the host, since there's nothing to round-trip.
+    private static void SendChuteFinalizeRequest(GrabbableObject item)
+    {
+        if (NetworkManager.Singleton == null || item.NetworkObject == null)
+            return;
+
+        if (NetworkManager.Singleton.IsHost)
+        {
+            HostFinalizeChuteItem(item);
+            return;
+        }
+
+        using FastBufferWriter writer = new(sizeof(ulong), Unity.Collections.Allocator.Temp);
+        writer.WriteValueSafe(item.NetworkObject.NetworkObjectId);
+        NetworkManager.Singleton.CustomMessagingManager.SendNamedMessage(ChuteFinalizeMessageName, NetworkManager.ServerClientId, writer, NetworkDelivery.Reliable);
+    }
+
+    // Host-only handler for ChuteFinalizeMessageName (see StartOfRoundAwakePostfix, only
+    // registered when IsHost). Resolves the requested item and hands it to
+    // HostFinalizeChuteItem - never touches PlayerControllerB.ItemSlots/DestroyItemInSlotAndSync
+    // at all, sidestepping their ownership requirement entirely (see CLAUDE.md).
+    private static void OnChuteFinalizeMessageReceived(ulong senderClientId, FastBufferReader reader)
+    {
+        reader.ReadValueSafe(out ulong networkObjectId);
+
+        // Not found means either a duplicate resend arriving after the first request already
+        // despawned it, or a genuinely stale/invalid id - either way, nothing to do.
+        if (NetworkManager.Singleton == null || !NetworkManager.Singleton.SpawnManager.SpawnedObjects.TryGetValue(networkObjectId, out NetworkObject netObj))
+            return;
+
+        GrabbableObject? item = netObj.GetComponent<GrabbableObject>();
+        if (item != null)
+            HostFinalizeChuteItem(item);
+    }
+
+    // Adds the item to the ship inventory and despawns it, entirely locally on the host - no
+    // network round trip needed, since NetworkObject.Despawn only ever requires being the server
+    // (never ownership of the object), and Inventory.Add already routes through its own ownerless
+    // ServerRpc regardless of who's calling it.
+    private static void HostFinalizeChuteItem(GrabbableObject item)
+    {
+        // isHeld is only trustworthy to read here because a real grab always goes through
+        // GrabObjectServerRpc/ClientRpc, which the host does see - unlike the plain field writes
+        // StoreAllInChuteCoroutine makes locally on the detaching client (see CLAUDE.md).
+        if (item.isHeld)
+        {
+            Plugin.Log.LogInfo($"Skipping chute finalize for '{item.itemProperties.itemName}' - it's been picked back up since the request was sent.");
+            return;
+        }
+
+        string itemName = item.itemProperties.itemName;
+        ShipInventoryUpdated.Objects.ItemData shipInventoryData;
+        try
+        {
+            shipInventoryData = ShipInventoryCompat.AddToShipInventory(item, StartOfRound.Instance.localPlayerController);
+        }
+        catch (System.Exception e)
+        {
+            Plugin.Log.LogWarning($"Adding '{itemName}' to the ship inventory threw ({e.GetType().Name}: {e.Message}) - it was left in the world instead of being stored.");
+            return;
+        }
+
+        try
+        {
+            item.NetworkObject.Despawn();
+            Plugin.Log.LogInfo($"Stored item into ship inventory chute: {itemName}");
+        }
+        catch (System.Exception e)
+        {
+            Plugin.Log.LogWarning($"'{itemName}' was added to the ship inventory but despawning it threw ({e.GetType().Name}: {e.Message}) - it may remain visible/pickup-able as a duplicate.");
+            ShipInventoryCompat.RemoveFromShipInventory(shipInventoryData);
+        }
     }
 
     // Anything created in Plugin.Awake() gets destroyed by an early scene transition, so the
@@ -560,6 +593,14 @@ public partial class Plugin : BaseUnityPlugin
         UnityEngine.Object.DontDestroyOnLoad(runnerObject);
         runner = runnerObject.AddComponent<UpdateRunner>();
         Plugin.Log.LogInfo("UpdateRunner created via StartOfRound.Awake postfix");
+
+        // Only the host ever needs to receive chute finalize requests - registering this on
+        // every client would be harmless (it would just never get called) but there's no reason
+        // to. Safe to call again on every level load: it just replaces the same handler.
+        if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsHost)
+        {
+            NetworkManager.Singleton.CustomMessagingManager.RegisterNamedMessageHandler(ChuteFinalizeMessageName, OnChuteFinalizeMessageReceived);
+        }
     }
 
     // Harmony patch to intercept the game's default drop call
