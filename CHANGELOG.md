@@ -3,6 +3,12 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.1.9] - 2026-08-28
+
+### Fixed
+
+- Fixed chute auto-store carryWeight not resetting after storing all items. After storing items, the player's displayed weight would remain at stale high values (e.g. "37 lbs" when empty). Root cause: fixing the chute-store NRE bug made vanilla's `DestroyItemInSlot` reliably subtract weight for every item, but `StoreAllInChuteCoroutine` was still also manually subtracting at detach time and `ProcessChuteFinalizeQueue` was adding it back before equipping—a lossy dance via `Mathf.Clamp(_, 1f, 10f)` that left residual weight. Now `carryWeight` is untouched at detach time and only modified once per item by vanilla's subtraction during the equip-and-destroy step.
+
 ## [0.1.8] - 2026-08-28
 
 ### Fixed

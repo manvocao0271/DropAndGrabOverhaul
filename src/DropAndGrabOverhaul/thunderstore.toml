@@ -7,7 +7,7 @@ repository = "https://thunderstore.io"
 [package]
 namespace = "bobabulkerENTERPRISE"
 name = "DropAndGrabOverhaul"
-versionNumber = "0.1.8"
+versionNumber = "0.1.9"
 description = "[BETA] Double-tap G to drop all scrap. Hold G to force drop all items. Press G at the company to put all scrap on the sell counter at once. Remove grab item cooldown. ShipInventoryUpdated compatible (press G at the chute)."
 websiteUrl = "https://github.com/manvocao0271/DropAndGrabOverhaul"
 containsNsfwContent = false

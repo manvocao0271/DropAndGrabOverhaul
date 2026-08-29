@@ -378,11 +378,14 @@ public partial class Plugin : BaseUnityPlugin
             item.targetFloorPosition = chutePosition;
             item.fallTime = 0f;
 
-            // Mirrors what DiscardHeldObject/PlaceGrabbableObject do when un-equipping an item -
-            // done manually here (instead of relying on DestroyItemInSlot's own equivalent logic
-            // below) since that only ever runs for whichever slot happens to be currentItemSlot.
+            // Mirrors what DiscardHeldObject/PlaceGrabbableObject do when un-equipping an item.
+            // carryWeight is deliberately left untouched here - ProcessChuteFinalizeQueue's equip
+            // step forces currentItemSlot to match this item right before destroying it, so
+            // DestroyItemInSlot's own carryWeight subtraction always fires correctly on its own;
+            // subtracting it again here too used to cause double-subtraction, previously patched
+            // over by adding it back before the equip step, but that add-then-subtract dance was
+            // lossy whenever the intermediate clamp(1, 10) got hit, leaving stale leftover weight.
             HUDManager.Instance.itemSlotIcons[slot].enabled = false;
-            player.carryWeight = Mathf.Clamp(player.carryWeight - (item.itemProperties.weight - 1f), 1f, 10f);
             player.isHoldingObject = false;
             if (player.currentlyHeldObjectServer == item)
                 player.currentlyHeldObjectServer = null;
@@ -471,17 +474,14 @@ public partial class Plugin : BaseUnityPlugin
             // testing - but a live test then hit the exact same NRE on native slots too (while
             // the extra slots, now re-equipped first, succeeded), so this apparently isn't an
             // extra-slot-specific race and needs to run for every item, not just extra ones.
-            // Re-equip via SwitchToItemSlot right before destroying to match that precondition.
-            // SwitchToItemSlot is client-local-only (see CLAUDE.md gotcha #5), but that's fine
-            // here: this coroutine is already fully serialized one item at a time, so there's no
-            // other slot switch racing against this one.
+            // Re-equip via SwitchToItemSlot right before destroying to match that precondition -
+            // this is also what makes DestroyItemInSlot's own carryWeight subtraction fire (see
+            // StoreAllInChuteCoroutine, which deliberately leaves carryWeight untouched at detach
+            // time). SwitchToItemSlot is client-local-only (see CLAUDE.md gotcha #5), but that's
+            // fine here: this coroutine is already fully serialized one item at a time, so there's
+            // no other slot switch racing against this one.
             try
             {
-                // Undo the manual carryWeight subtraction StoreAllInChuteCoroutine already did
-                // when detaching this item - re-equipping below makes vanilla's own
-                // DestroyItemInSlot subtract it again via its isHoldingObject block, so without
-                // this the player would get charged for the item's weight twice.
-                player.carryWeight = Mathf.Clamp(player.carryWeight + (item.itemProperties.weight - 1f), 1f, 10f);
                 SwitchToItemSlotMethod?.Invoke(player, new object?[] { slot, null });
             }
             catch (System.Exception e)
