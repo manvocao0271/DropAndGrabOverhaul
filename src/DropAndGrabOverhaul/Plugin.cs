@@ -400,16 +400,26 @@ public partial class Plugin : BaseUnityPlugin
             item.fallTime = 0f;
 
             // Mirrors what DiscardHeldObject/PlaceGrabbableObject do when un-equipping an item.
-            // carryWeight is deliberately left untouched here - ProcessChuteFinalizeQueue's equip
-            // step forces currentItemSlot to match this item right before destroying it, so
-            // DestroyItemInSlot's own carryWeight subtraction always fires correctly on its own;
-            // subtracting it again here too used to cause double-subtraction, previously patched
-            // over by adding it back before the equip step, but that add-then-subtract dance was
-            // lossy whenever the intermediate clamp(1, 10) got hit, leaving stale leftover weight.
+            // carryWeight is deliberately left untouched here - ProcessChuteFinalizeQueue applies
+            // the equivalent subtraction itself right before sending the finalize request, since
+            // nothing on the host-authoritative despawn path (see HostFinalizeChuteItem) runs
+            // vanilla's own DestroyItemInSlot subtraction for it anymore.
             HUDManager.Instance.itemSlotIcons[slot].enabled = false;
             player.isHoldingObject = false;
             if (player.currentlyHeldObjectServer == item)
                 player.currentlyHeldObjectServer = null;
+
+            // Vanilla's DestroyItemInSlot only resets `twoHanded` (and its HUD icon) when the
+            // destroyed item is the actively-equipped one - since only one two-handed item can
+            // ever be held at a time, storing one here without this would leave `twoHanded` stuck
+            // true forever (DestroyItemInSlot itself never runs on this path anymore), permanently
+            // blocking BeginGrabObject() from grabbing anything else at all - "hands full" forever.
+            if (item.itemProperties.twoHanded)
+            {
+                player.twoHanded = false;
+                player.twoHandedAnimation = false;
+                HUDManager.Instance.holdingTwoHandedItem.enabled = false;
+            }
 
             // Pacing before the next item starts falling can be configured very short, but the
             // item itself still needs enough time on screen for its fall animation and drop SFX to
