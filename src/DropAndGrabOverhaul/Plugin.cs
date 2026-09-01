@@ -63,6 +63,15 @@ public partial class Plugin : BaseUnityPlugin
     // wait so a stuck flag from some unrelated bug can't hang the auto-store sequence forever.
     private const float GrabAnimationWaitTimeout = 3f;
 
+    // How long after any chute-store activity (including the coroutine being cut short by a
+    // jump/fall) to keep suppressing generic force-drop/double-tap/single-tap detection. Without
+    // this, a G press landing right after the coroutine stops - while the player is still trying
+    // to interact with the chute but happens to not be hovering it that exact frame (e.g. mid-jump,
+    // or aim drifted off while scrolling the hotbar) - gets read as a fresh, genuine tap by the
+    // generic detectors and can trigger an unintended drop-all.
+    private const float ChuteActivityGraceWindow = 0.5f;
+    private static float lastChuteActivityTime = -999f;
+
     // Named message used to ask the host to add a chute-stored item to the ship inventory and
     // despawn it (see HostFinalizeChuteItem) - despawning a NetworkObject only ever requires
     // being the server, never ownership of the object, so routing this through the host avoids
@@ -137,6 +146,17 @@ public partial class Plugin : BaseUnityPlugin
             // gets past the first item's delay before being killed and restarted
             if (storeInChuteCoroutine == null)
                 storeInChuteCoroutine = runner!.StartCoroutine(StoreAllInChuteCoroutine(player));
+            lastChuteActivityTime = Time.time;
+            InputHandler.ResetDropKeyTracking();
+            return;
+        }
+
+        // Recently active at the chute (including the coroutine having just been cut short by a
+        // jump/fall) - keep suppressing generic drop detection a bit longer, see
+        // ChuteActivityGraceWindow.
+        if (Time.time - lastChuteActivityTime < ChuteActivityGraceWindow)
+        {
+            InputHandler.ResetDropKeyTracking();
             return;
         }
 
@@ -152,12 +172,16 @@ public partial class Plugin : BaseUnityPlugin
             // gets past the first item's delay before being killed and restarted
             if (autoSellCoroutine == null)
                 autoSellCoroutine = runner!.StartCoroutine(AutoSellInventoryCoroutine(player, desk));
+            InputHandler.ResetDropKeyTracking();
             return;
         }
 
         // Don't allow drop-all actions if player is at desk and auto-sell is enabled
         if (atDesk && SellConfiguration.AutoSellInventory)
+        {
+            InputHandler.ResetDropKeyTracking();
             return;
+        }
 
         // Check for force drop (holding key) first
         bool isForceDropping = InputHandler.IsForceDropHeld();
@@ -218,111 +242,132 @@ public partial class Plugin : BaseUnityPlugin
 
     private static System.Collections.IEnumerator DropAllItemsCoroutine(PlayerControllerB player, List<GrabbableObject> itemsToDrop, bool isForceDropping)
     {
-        // Save the current item slot to restore later
-        int originalSlot = player.currentItemSlot;
-
-        // Drop each item by equipping it first, then dropping it
-        int droppedCount = 0;
-        foreach (GrabbableObject item in itemsToDrop)
+        // Wrapped in try/finally so an uncaught exception partway through (e.g. a stale slot
+        // index from another mod resizing ItemSlots) can't leave dropAllCoroutine stuck non-null
+        // forever - that would silently and permanently disable double-tap/hold-drop for the rest
+        // of the session, since RunUpdate only ever starts a new one when this is null.
+        try
         {
-            if (item != null)
+            // Save the current item slot to restore later
+            int originalSlot = player.currentItemSlot;
+
+            // Drop each item by equipping it first, then dropping it
+            int droppedCount = 0;
+            foreach (GrabbableObject item in itemsToDrop)
             {
-                string itemName = item.itemProperties.itemName;
-
-                // Find the slot index
-                int slotIndex = System.Array.IndexOf(player.ItemSlots, item);
-
-                // Blacklist only applies to the double-tap drop; force drop ignores it
-                if (!isForceDropping && ItemBlacklist.IsBlacklisted(itemName))
+                if (item != null)
                 {
-                    Plugin.Log.LogInfo($"Skipping blacklisted item: {itemName}");
-                    continue;
-                }
+                    string itemName = item.itemProperties.itemName;
 
-                // Switch to this slot to equip it
-                player.SwitchToItemSlot(slotIndex);
-                // Now drop it, suppressing the drop-key patch in case this still lands on a G press frame
-                isDroppingAll = true;
-                player.DiscardHeldObject();
-                isDroppingAll = false;
-                droppedCount++;
-                Plugin.Log.LogInfo($"Dropped item: {itemName}");
+                    // Find the slot index
+                    int slotIndex = System.Array.IndexOf(player.ItemSlots, item);
 
-                // currentlyHeldObjectServer is only cleared once the ThrowObjectClientRpc echo
-                // arrives back on this client. Switching slots before that lands makes
-                // SwitchToItemSlot overwrite the reference while the throw is still in flight -
-                // the delayed echo then finds a mismatched currentlyHeldObjectServer and the
-                // vanilla ThrowObjectClientRpc safety check logs "not the same as
-                // currentlyHeldObjectServer" and skips clearing it, leaving the item stuck
-                // invisible/undropped for everyone. Wait for the reference to actually clear,
-                // with a timeout so a dropped RPC can't hang us - but if it does time out (e.g.
-                // a laggy host), stop here instead of switching slots anyway, so the still-
-                // in-flight echo can still land on a matching reference later.
-                float waitStart = UnityEngine.Time.time;
-                while (player.currentlyHeldObjectServer != null && UnityEngine.Time.time - waitStart < 2f)
-                {
-                    yield return null;
-                }
+                    // Blacklist only applies to the double-tap drop; force drop ignores it
+                    if (!isForceDropping && ItemBlacklist.IsBlacklisted(itemName))
+                    {
+                        Plugin.Log.LogInfo($"Skipping blacklisted item: {itemName}");
+                        continue;
+                    }
 
-                if (player.currentlyHeldObjectServer != null)
-                {
-                    Plugin.Log.LogWarning($"Timed out waiting for '{itemName}' to finish dropping over the network - stopping drop-all early to avoid desyncing the rest.");
-                    break;
+                    // Switch to this slot to equip it
+                    player.SwitchToItemSlot(slotIndex);
+                    // Now drop it, suppressing the drop-key patch in case this still lands on a G press frame
+                    isDroppingAll = true;
+                    player.DiscardHeldObject();
+                    isDroppingAll = false;
+                    droppedCount++;
+                    Plugin.Log.LogInfo($"Dropped item: {itemName}");
+
+                    // currentlyHeldObjectServer is only cleared once the ThrowObjectClientRpc echo
+                    // arrives back on this client. Switching slots before that lands makes
+                    // SwitchToItemSlot overwrite the reference while the throw is still in flight -
+                    // the delayed echo then finds a mismatched currentlyHeldObjectServer and the
+                    // vanilla ThrowObjectClientRpc safety check logs "not the same as
+                    // currentlyHeldObjectServer" and skips clearing it, leaving the item stuck
+                    // invisible/undropped for everyone. Wait for the reference to actually clear,
+                    // with a timeout so a dropped RPC can't hang us - but if it does time out (e.g.
+                    // a laggy host), stop here instead of switching slots anyway, so the still-
+                    // in-flight echo can still land on a matching reference later.
+                    float waitStart = UnityEngine.Time.time;
+                    while (player.currentlyHeldObjectServer != null && UnityEngine.Time.time - waitStart < 2f)
+                    {
+                        yield return null;
+                    }
+
+                    if (player.currentlyHeldObjectServer != null)
+                    {
+                        Plugin.Log.LogWarning($"Timed out waiting for '{itemName}' to finish dropping over the network - stopping drop-all early to avoid desyncing the rest.");
+                        break;
+                    }
                 }
             }
-        }
 
-        // Restore the original hotbar slot index, even if it's now empty - but only if we
-        // actually switched away from it and it's currently safe to do so. SwitchToItemSlot
-        // unconditionally overwrites currentlyHeldObjectServer, so calling it unconditionally
-        // here reproduces the exact same desync race the per-item wait above guards against:
-        // it would clobber the reference for a throw that's still in flight, whether that's
-        // our own timed-out item above, or a wholly unrelated drop (e.g. the immediate
-        // single-tap drop) that happened to be in progress concurrently on another item.
-        if (player.currentItemSlot != originalSlot && player.currentlyHeldObjectServer == null)
+            // Restore the original hotbar slot index, even if it's now empty - but only if we
+            // actually switched away from it and it's currently safe to do so. SwitchToItemSlot
+            // unconditionally overwrites currentlyHeldObjectServer, so calling it unconditionally
+            // here reproduces the exact same desync race the per-item wait above guards against:
+            // it would clobber the reference for a throw that's still in flight, whether that's
+            // our own timed-out item above, or a wholly unrelated drop (e.g. the immediate
+            // single-tap drop) that happened to be in progress concurrently on another item.
+            if (player.currentItemSlot != originalSlot && player.currentlyHeldObjectServer == null)
+            {
+                player.SwitchToItemSlot(originalSlot);
+            }
+
+            Plugin.Log.LogInfo($"Dropped {droppedCount} items total");
+        }
+        finally
         {
-            player.SwitchToItemSlot(originalSlot);
+            dropAllCoroutine = null;
         }
-
-        Plugin.Log.LogInfo($"Dropped {droppedCount} items total");
-        dropAllCoroutine = null;
     }
 
     private static System.Collections.IEnumerator AutoSellInventoryCoroutine(PlayerControllerB player, DepositItemsDesk desk)
     {
-        int soldCount = 0;
-        for (int i = 0; i < player.ItemSlots.Length; i++)
+        // See DropAllItemsCoroutine's try/finally comment - same reasoning applies here so an
+        // uncaught exception can't leave autoSellCoroutine stuck non-null forever.
+        try
         {
-            if (player.ItemSlots[i] != null && player.ItemSlots[i].itemProperties.isScrap)
+            int soldCount = 0;
+            for (int i = 0; i < player.ItemSlots.Length; i++)
             {
-                string itemName = player.ItemSlots[i].itemProperties.itemName;
-
-                if (SellConfiguration.IsSellBlacklisted(itemName))
+                if (player.ItemSlots[i] != null && player.ItemSlots[i].itemProperties.isScrap)
                 {
-                    Plugin.Log.LogInfo($"Skipping sell-blacklisted item: {itemName}");
-                    continue;
-                }
+                    string itemName = player.ItemSlots[i].itemProperties.itemName;
 
-                player.SwitchToItemSlot(i);
-                // Suppress the drop-key patch from swallowing this call if it lands on a G press frame
-                isPlacingOnCounter = true;
-                desk.PlaceItemOnCounter(player);
-                isPlacingOnCounter = false;
-                soldCount++;
-                Plugin.Log.LogInfo($"Sold item: {itemName}");
-                // Wait for the grab animation to complete before selling the next item
-                yield return new WaitForSeconds(0.2f);
+                    if (SellConfiguration.IsSellBlacklisted(itemName))
+                    {
+                        Plugin.Log.LogInfo($"Skipping sell-blacklisted item: {itemName}");
+                        continue;
+                    }
+
+                    player.SwitchToItemSlot(i);
+                    // Suppress the drop-key patch from swallowing this call if it lands on a G press frame
+                    isPlacingOnCounter = true;
+                    desk.PlaceItemOnCounter(player);
+                    isPlacingOnCounter = false;
+                    soldCount++;
+                    Plugin.Log.LogInfo($"Sold item: {itemName}");
+                    // Wait for the grab animation to complete before selling the next item
+                    yield return new WaitForSeconds(0.2f);
+                }
             }
+            Plugin.Log.LogInfo($"Sold {soldCount} items total");
         }
-        Plugin.Log.LogInfo($"Sold {soldCount} items total");
-        autoSellCoroutine = null;
+        finally
+        {
+            autoSellCoroutine = null;
+        }
     }
 
     private static System.Collections.IEnumerator StoreAllInChuteCoroutine(PlayerControllerB player)
     {
+        // See DropAllItemsCoroutine's try/finally comment - same reasoning applies here so an
+        // uncaught exception can't leave storeInChuteCoroutine stuck non-null forever.
+        try
+        {
         Vector3 chutePosition = player.hoveringOverTrigger.transform.position;
 
-        int storedCount = 0;
         // Re-check the player's slots every iteration (instead of snapshotting once up front) so
         // items grabbed after this coroutine already started still get caught and stored too,
         // rather than only ever processing whatever was held at the very start. Items are tracked
@@ -443,7 +488,6 @@ public partial class Plugin : BaseUnityPlugin
             chuteFinalizeQueue.Enqueue((item, slot, itemName, Time.time + settleDelay, isEquippedItem));
             if (chuteFinalizeQueueCoroutine == null)
                 chuteFinalizeQueueCoroutine = runner!.StartCoroutine(ProcessChuteFinalizeQueue(player));
-            storedCount++;
 
             // Waited out frame-by-frame (instead of a single WaitForSeconds) so a jump/fall can
             // still be caught mid-wait - isJumping only stays true for ~0.25s after the jump key
@@ -463,10 +507,13 @@ public partial class Plugin : BaseUnityPlugin
         }
 
         stoppedByJump:
-        if (storedCount > 0)
-            StartOfRound.Instance.SendChangedWeightEvent();
-
-        storeInChuteCoroutine = null;
+        ;
+        }
+        finally
+        {
+            storeInChuteCoroutine = null;
+            lastChuteActivityTime = Time.time;
+        }
     }
 
     // isJumping is only true for the initial ~0.25s takeoff window (see the game's own PlayerJump
@@ -484,47 +531,65 @@ public partial class Plugin : BaseUnityPlugin
     // reliable-channel message can still be lost if e.g. this client's connection is dying.
     private static System.Collections.IEnumerator ProcessChuteFinalizeQueue(PlayerControllerB player)
     {
-        while (chuteFinalizeQueue.Count > 0)
+        // See DropAllItemsCoroutine's try/finally comment - same reasoning applies here so an
+        // uncaught exception can't leave chuteFinalizeQueueCoroutine stuck non-null forever
+        // (which would silently strand every item still queued behind it - see CLAUDE.md gotcha #6).
+        try
         {
-            (GrabbableObject item, int _, string itemName, float readyAtTime, bool carryWeightAlreadyDeducted) = chuteFinalizeQueue.Dequeue();
-
-            float wait = readyAtTime - Time.time;
-            if (wait > 0f)
-                yield return new WaitForSeconds(wait);
-
-            if (item == null)
-                continue;
-
-            // Items that were actually equipped when detached already had their weight subtracted
-            // by vanilla's own DiscardHeldObject/SetObjectAsNoLongerHeld (see
-            // StoreAllInChuteCoroutine) - only non-equipped (pocketed) items still need it here.
-            if (!carryWeightAlreadyDeducted)
-                player.carryWeight = Mathf.Clamp(player.carryWeight - (item.itemProperties.weight - 1f), 1f, 10f);
-
-            SendChuteFinalizeRequest(item);
-
-            float elapsed = 0f;
-            int retries = 0;
-            while (item != null && elapsed < ChuteDestroyConfirmTimeout)
+            bool anyProcessed = false;
+            while (chuteFinalizeQueue.Count > 0)
             {
-                yield return null;
-                elapsed += Time.deltaTime;
+                (GrabbableObject item, int _, string itemName, float readyAtTime, bool carryWeightAlreadyDeducted) = chuteFinalizeQueue.Dequeue();
+                anyProcessed = true;
 
-                if (item != null && retries < ChuteDestroyMaxRetries && elapsed >= (retries + 1) * ChuteDestroyRetryInterval)
+                float wait = readyAtTime - Time.time;
+                if (wait > 0f)
+                    yield return new WaitForSeconds(wait);
+
+                if (item == null)
+                    continue;
+
+                // Items that were actually equipped when detached already had their weight subtracted
+                // by vanilla's own DiscardHeldObject/SetObjectAsNoLongerHeld (see
+                // StoreAllInChuteCoroutine) - only non-equipped (pocketed) items still need it here.
+                if (!carryWeightAlreadyDeducted)
+                    player.carryWeight = Mathf.Clamp(player.carryWeight - (item.itemProperties.weight - 1f), 1f, 10f);
+
+                SendChuteFinalizeRequest(item);
+
+                float elapsed = 0f;
+                int retries = 0;
+                while (item != null && elapsed < ChuteDestroyConfirmTimeout)
                 {
-                    retries++;
-                    Plugin.Log.LogWarning($"'{itemName}' hasn't despawned {elapsed:F1}s after requesting chute storage - resending finalize request (attempt {retries}/{ChuteDestroyMaxRetries})");
-                    SendChuteFinalizeRequest(item);
+                    yield return null;
+                    elapsed += Time.deltaTime;
+
+                    if (item != null && retries < ChuteDestroyMaxRetries && elapsed >= (retries + 1) * ChuteDestroyRetryInterval)
+                    {
+                        retries++;
+                        Plugin.Log.LogWarning($"'{itemName}' hasn't despawned {elapsed:F1}s after requesting chute storage - resending finalize request (attempt {retries}/{ChuteDestroyMaxRetries})");
+                        SendChuteFinalizeRequest(item);
+                    }
                 }
+
+                if (item != null)
+                    Plugin.Log.LogWarning($"'{itemName}' did not despawn within {ChuteDestroyConfirmTimeout}s of requesting chute storage - it may remain visible/pickup-able; try storing it manually via the chute's [E] interact.");
+                else
+                    Plugin.Log.LogInfo($"Confirmed '{itemName}' was stored into the ship inventory chute.");
             }
 
-            if (item != null)
-                Plugin.Log.LogWarning($"'{itemName}' did not despawn within {ChuteDestroyConfirmTimeout}s of requesting chute storage - it may remain visible/pickup-able; try storing it manually via the chute's [E] interact.");
-            else
-                Plugin.Log.LogInfo($"Confirmed '{itemName}' was stored into the ship inventory chute.");
+            // Fired once after the whole queue drains (rather than per-item, or from
+            // StoreAllInChuteCoroutine right as it finishes iterating) so this reflects every
+            // queued item's carryWeight deduction, including pocketed items whose deduction above
+            // is deferred behind this queue's settle delay - calling it any earlier could sync a
+            // stale weight while items are still pending here.
+            if (anyProcessed)
+                StartOfRound.Instance.SendChangedWeightEvent();
         }
-
-        chuteFinalizeQueueCoroutine = null;
+        finally
+        {
+            chuteFinalizeQueueCoroutine = null;
+        }
     }
 
     // Asks the host to add the item to the ship inventory and despawn it (see

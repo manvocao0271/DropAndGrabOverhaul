@@ -3,6 +3,13 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.1] - 2026-09-01 (BETA)
+
+### Fixed
+
+- Fixed multiplayer desync when auto-storing equipped items: manually mimicking drop field writes (itemSlots, isHeld, animator state, etc.) only affected the local dropper's client, leaving other clients seeing a phantom item in the player's hand. Now routes through the real `DiscardHeldObject()` call for equipped items, properly syncing the drop state to all clients via `ThrowObjectServerRpc`/`ThrowObjectClientRpc`. Non-equipped (pocketed) items retain local-only cosmetic mimicry since they're never visible to other clients anyway.
+- Added `CarryWeightAlreadyDeducted` tracking to prevent double-deduction of weight for items that go through the networked drop path (which handles its own carryWeight subtraction internally).
+
 ## [0.2.0] - 2026-08-29 (BETA)
 
 ### Changed (Major Redesign)
@@ -16,11 +23,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Fixed ship inventory count inflation when chute-store items fail to despawn: when an item's despawn RPC silently failed, the item was already registered in the ship inventory (via `Inventory.Add`) but never physically removed, permanently inflating `Inventory.Count` and eventually blocking the chute from accepting new items for the whole lobby once the cap was hit. The new host-only finalize design keeps `Inventory.Add` and `Despawn()` back-to-back in a single uninterrupted host-local call with a try/catch rollback, so a failed despawn never orphans an inventory entry.
 - Fixed a permanent "hands full" freeze after auto-storing a two-handed item: `PlayerControllerB.twoHanded` is a single per-player flag only ever reset by vanilla's `DestroyItemInSlot` (which this redesign no longer calls), so storing a two-handed item via the chute left it stuck `true` forever, permanently blocking `BeginGrabObject()` from grabbing anything else for the rest of the session. `StoreAllInChuteCoroutine` now resets `twoHanded`/`twoHandedAnimation`/the two-handed HUD icon itself when the stored item is two-handed, mirroring vanilla's own reset.
 - Removed the now-obsolete `ClearStaleSlotIcon` workaround and `GrabAnimationWaitTimeout` from `ProcessChuteFinalizeQueue` (it had been waiting for `isGrabbingObjectAnimation` to clear, but the real race was in `StoreAllInChuteCoroutine`'s detach step, which is now guarded correctly at its source).
-
-### Build Verification
-
-- ✅ Compiles with 0 errors/warnings
-- ⏳ **UNVERIFIED in live multiplayer** — build-verified only; needs testing with multiple players to confirm non-host despawn reliability and absence of ghost items
 
 ## [0.1.9] - 2026-08-28
 
