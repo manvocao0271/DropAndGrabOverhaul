@@ -42,6 +42,7 @@ public partial class Plugin : BaseUnityPlugin
     private static Coroutine? chuteFinalizeQueueCoroutine;
     private static bool isPlacingOnCounter;
     private static bool isDroppingAll;
+    private static bool isStoringInChute;
 
     // Floor for how long a chute-stored item stays visible/audible before despawning, regardless
     // of how short the configured pacing delay is, so its drop SFX never gets cut off.
@@ -71,8 +72,10 @@ public partial class Plugin : BaseUnityPlugin
 
     // Items waiting to be added to the ship inventory and despawned once their settle time is up,
     // processed one at a time by ProcessChuteFinalizeQueue regardless of how fast new items are
-    // still falling in StoreAllInChuteCoroutine.
-    private static readonly Queue<(GrabbableObject Item, int Slot, string ItemName, float ReadyAtTime)> chuteFinalizeQueue = new();
+    // still falling in StoreAllInChuteCoroutine. CarryWeightAlreadyDeducted is true for the item
+    // that was actually equipped when detached (its weight was already subtracted by vanilla's own
+    // DiscardHeldObject/SetObjectAsNoLongerHeld - see StoreAllInChuteCoroutine).
+    private static readonly Queue<(GrabbableObject Item, int Slot, string ItemName, float ReadyAtTime, bool CarryWeightAlreadyDeducted)> chuteFinalizeQueue = new();
 
     private void Awake()
     {
@@ -374,51 +377,62 @@ public partial class Plugin : BaseUnityPlugin
             processedItems.Add(item);
 
             string itemName = item.itemProperties.itemName;
+            bool isEquippedItem = player.currentlyHeldObjectServer == item;
 
-            // Deliberately NOT calling player.SwitchToItemSlot(slot) here - it's client-local-only
-            // (never networked), and its equip/pocket side effects (currentItemSlot,
-            // isHoldingObject, currentlyHeldObjectServer) getting rewritten once per item in rapid
-            // succession while ProcessChuteFinalizeQueue's DestroyItemInSlotAndSync for an earlier
-            // item is still in flight is exactly the kind of local-only desync that caused the
-            // earlier drop-all visual bug (see CLAUDE.md). Since everything EquipItem would have
-            // done for us is already handled manually below, skipping it entirely avoids the
-            // interaction altogether rather than trying to time around it.
-            item.playerHeldBy = null;
-
-            // Detach the item from the player's hand and hand it off to GrabbableObject's own
-            // fall-curve logic (the same thing that runs when any item is dropped/placed in the
-            // world) so it visibly drops onto the chute and plays its drop sound on landing,
-            // instead of just vanishing straight out of the player's hand.
-            item.isHeld = false;
-            item.isPocketed = false;
-            item.parentObject = null;
-            item.transform.SetParent(null, true);
-            item.EnablePhysics(true);
-            item.EnableItemMeshes(true);
-            item.startFallingPosition = item.transform.position;
-            item.targetFloorPosition = chutePosition;
-            item.fallTime = 0f;
-
-            // Mirrors what DiscardHeldObject/PlaceGrabbableObject do when un-equipping an item.
-            // carryWeight is deliberately left untouched here - ProcessChuteFinalizeQueue applies
-            // the equivalent subtraction itself right before sending the finalize request, since
-            // nothing on the host-authoritative despawn path (see HostFinalizeChuteItem) runs
-            // vanilla's own DestroyItemInSlot subtraction for it anymore.
-            HUDManager.Instance.itemSlotIcons[slot].enabled = false;
-            player.isHoldingObject = false;
-            if (player.currentlyHeldObjectServer == item)
-                player.currentlyHeldObjectServer = null;
-
-            // Vanilla's DestroyItemInSlot only resets `twoHanded` (and its HUD icon) when the
-            // destroyed item is the actively-equipped one - since only one two-handed item can
-            // ever be held at a time, storing one here without this would leave `twoHanded` stuck
-            // true forever (DestroyItemInSlot itself never runs on this path anymore), permanently
-            // blocking BeginGrabObject() from grabbing anything else at all - "hands full" forever.
-            if (item.itemProperties.twoHanded)
+            if (isEquippedItem)
             {
-                player.twoHanded = false;
-                player.twoHandedAnimation = false;
-                HUDManager.Instance.holdingTwoHandedItem.enabled = false;
+                // Routes through the real vanilla drop/place path (the same call this mod's own
+                // auto-sell placement already uses) instead of manually mimicking its side effects
+                // - only this path actually networks the detach (ItemSlots, isHeld, physics/mesh,
+                // animator pose, icons, control tip, twoHanded, carryWeight) to every other client
+                // via ThrowObjectServerRpc/ThrowObjectClientRpc. Manually mimicking those fields
+                // only ever changed them on the local dropper's own client, so every other client
+                // (including the host) kept seeing this player still holding the item in their hand
+                // - reported as "the host sees a non-host player holding an item, but that player
+                // says they aren't holding anything". isStoringInChute bypasses
+                // DiscardHeldObjectPrefix, which would otherwise suppress this call the same way it
+                // suppresses a real G-press.
+                isStoringInChute = true;
+                try
+                {
+                    player.DiscardHeldObject(placeObject: true, parentObjectTo: null, placePosition: chutePosition, matchRotationOfParent: false);
+                }
+                finally
+                {
+                    isStoringInChute = false;
+                }
+            }
+            else
+            {
+                // Not currently equipped, so nobody but this client could ever see it anyway -
+                // vanilla only ever renders whichever single item is actively equipped; every other
+                // slot's item has its meshes disabled for every client, the same before and after
+                // this mod's involvement. Manually revealing+dropping it is purely a cosmetic
+                // preview for the local dropper's own view, matching how it behaved before.
+                item.playerHeldBy = null;
+                item.isHeld = false;
+                item.isPocketed = false;
+                item.parentObject = null;
+                item.transform.SetParent(null, true);
+                item.EnablePhysics(true);
+                item.EnableItemMeshes(true);
+                item.startFallingPosition = item.transform.position;
+                item.targetFloorPosition = chutePosition;
+                item.fallTime = 0f;
+                HUDManager.Instance.itemSlotIcons[slot].enabled = false;
+
+                // Vanilla's DestroyItemInSlot only resets `twoHanded` (and its HUD icon) when the
+                // destroyed item is the actively-equipped one - since only one two-handed item can
+                // ever be held at a time, storing one here without this would leave `twoHanded`
+                // stuck true forever, permanently blocking BeginGrabObject() from grabbing anything
+                // else at all - "hands full" forever. Not a concern in the isEquippedItem branch
+                // above: DiscardHeldObject's own SetObjectAsNoLongerHeld already resets it there.
+                if (item.itemProperties.twoHanded)
+                {
+                    player.twoHanded = false;
+                    player.twoHandedAnimation = false;
+                    HUDManager.Instance.holdingTwoHandedItem.enabled = false;
+                }
             }
 
             // Pacing before the next item starts falling can be configured very short, but the
@@ -426,7 +440,7 @@ public partial class Plugin : BaseUnityPlugin
             // finish before it's destroyed - so that part always waits at least MinSettleTime.
             float pacingDelay = StartOfRound.Instance.shipHasLanded ? ShipInventoryConfiguration.StoreDelayLanded : ShipInventoryConfiguration.StoreDelayOrbit;
             float settleDelay = Mathf.Max(pacingDelay, MinSettleTime);
-            chuteFinalizeQueue.Enqueue((item, slot, itemName, Time.time + settleDelay));
+            chuteFinalizeQueue.Enqueue((item, slot, itemName, Time.time + settleDelay, isEquippedItem));
             if (chuteFinalizeQueueCoroutine == null)
                 chuteFinalizeQueueCoroutine = runner!.StartCoroutine(ProcessChuteFinalizeQueue(player));
             storedCount++;
@@ -472,7 +486,7 @@ public partial class Plugin : BaseUnityPlugin
     {
         while (chuteFinalizeQueue.Count > 0)
         {
-            (GrabbableObject item, int _, string itemName, float readyAtTime) = chuteFinalizeQueue.Dequeue();
+            (GrabbableObject item, int _, string itemName, float readyAtTime, bool carryWeightAlreadyDeducted) = chuteFinalizeQueue.Dequeue();
 
             float wait = readyAtTime - Time.time;
             if (wait > 0f)
@@ -481,11 +495,11 @@ public partial class Plugin : BaseUnityPlugin
             if (item == null)
                 continue;
 
-            // Mirrors the weight subtraction vanilla's DestroyItemInSlot would normally do -
-            // nothing else does this now that the host, not this client, is what actually
-            // destroys the item (see StoreAllInChuteCoroutine, which deliberately leaves
-            // carryWeight untouched at detach time).
-            player.carryWeight = Mathf.Clamp(player.carryWeight - (item.itemProperties.weight - 1f), 1f, 10f);
+            // Items that were actually equipped when detached already had their weight subtracted
+            // by vanilla's own DiscardHeldObject/SetObjectAsNoLongerHeld (see
+            // StoreAllInChuteCoroutine) - only non-equipped (pocketed) items still need it here.
+            if (!carryWeightAlreadyDeducted)
+                player.carryWeight = Mathf.Clamp(player.carryWeight - (item.itemProperties.weight - 1f), 1f, 10f);
 
             SendChuteFinalizeRequest(item);
 
@@ -618,8 +632,8 @@ public partial class Plugin : BaseUnityPlugin
     [HarmonyPrefix]
     private static bool DiscardHeldObjectPrefix(PlayerControllerB __instance)
     {
-        // Never suppress our own sell-placement or drop-all calls
-        if (isPlacingOnCounter || isDroppingAll)
+        // Never suppress our own sell-placement, drop-all, or chute-store calls
+        if (isPlacingOnCounter || isDroppingAll || isStoringInChute)
             return true;
 
         // Supress ALL drops triggered by the G key (single-tap, double-tap, or hold)
