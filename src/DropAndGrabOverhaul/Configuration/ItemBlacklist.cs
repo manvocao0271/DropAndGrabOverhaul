@@ -13,7 +13,7 @@ namespace DropAndGrabOverhaul.Configuration
             blacklistedItemsConfig = config.Bind(
                 section: "Items",
                 key: "BlacklistedItems",
-                defaultValue: "Walkie-talkie, Flashlight, Shovel, Lockpicker, Pro-flashlight, Stun grenade, Boombox, TZP-Inhalant, Zap gun, Jetpack, Extension Ladder, Radar-booster, Spray paint, Weed killer, Belt bag, Kitchen knife, Shotgun, Ammo, Key",
+                defaultValue: "Walkie-talkie, Flashlight, Shovel, Lockpicker, Pro-flashlight, Stun grenade, Boombox, TZP-Inhalant, Zap gun, Jetpack, Extension Ladder, Radar-booster, Spray paint, Weed killer, Belt bag, Kitchen knife, Shotgun, Ammo, Key, Medic bag, Night Vision Goggles, Cat, Cat Food",
                 description: "Comma-separated list of item names that should NOT be dropped (Walkie-talkie, Flashlight, Shovel, etc.)"
             );
 

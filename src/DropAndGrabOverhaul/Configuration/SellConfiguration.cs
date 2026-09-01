@@ -23,8 +23,8 @@ namespace DropAndGrabOverhaul.Configuration
             sellBlacklistConfig = config.Bind(
                 section: "Sell",
                 key: "SellBlacklistedItems",
-                defaultValue: "Walkie-talkie, Flashlight, Shovel, Lockpicker, Pro-flashlight, Stun grenade, Boombox, TZP-Inhalant, Zap gun, Jetpack, Extension Ladder, Radar-booster, Spray paint, Weed killer, Belt bag, Kitchen knife, Shotgun, Ammo, Key",
-                description: "Comma-separated list of item names that should NOT be automatically sold by the auto-sell feature."
+                defaultValue: "Walkie-talkie, Flashlight, Shovel, Lockpicker, Pro-flashlight, Stun grenade, Boombox, TZP-Inhalant, Zap gun, Jetpack, Extension Ladder, Radar-booster, Spray paint, Weed killer, Belt bag, Kitchen knife, Shotgun, Ammo, Key, Medic bag, Night Vision Goggles, Cat, Cat Food",
+                description: "Comma-separated list of item names that should NOT be automatically (Walkie-talkie, Flashlight, Shovel, etc.)"
             );
 
             AutoSellInventory = autoSellInventoryConfig.Value;

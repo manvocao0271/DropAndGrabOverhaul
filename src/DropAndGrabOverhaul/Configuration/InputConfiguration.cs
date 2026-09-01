@@ -23,7 +23,7 @@ namespace DropAndGrabOverhaul.Configuration
             forceDropHoldDurationConfig = config.Bind(
                 section: "Input",
                 key: "ForceDropHoldDuration",
-                defaultValue: 0.5f,
+                defaultValue: 0.2f,
                 description: "Hold drop key for this many seconds to force drop all items, ignoring blacklisted items."
             );
 

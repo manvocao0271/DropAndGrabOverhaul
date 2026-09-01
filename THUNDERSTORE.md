@@ -37,3 +37,5 @@ Planned: HotbarPlus, ReservedItemSlot.
 ## Feedback
 
 Found a bug or have a suggestion? Please report it on the [GitHub repository](https://github.com/manvocao0271/DropAndGrabOverhaul), including your Lethal Company version, DropAndGrabOverhaul version, BepInEx version, and any other inventory/hotbar mods installed.
+
+#### Special thanks to Wooper.exe for helping me playtest the mod!
