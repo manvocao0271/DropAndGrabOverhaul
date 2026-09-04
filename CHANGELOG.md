@@ -24,13 +24,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Fixed a permanent "hands full" freeze after auto-storing a two-handed item: `PlayerControllerB.twoHanded` is a single per-player flag only ever reset by vanilla's `DestroyItemInSlot` (which this redesign no longer calls), so storing a two-handed item via the chute left it stuck `true` forever, permanently blocking `BeginGrabObject()` from grabbing anything else for the rest of the session. `StoreAllInChuteCoroutine` now resets `twoHanded`/`twoHandedAnimation`/the two-handed HUD icon itself when the stored item is two-handed, mirroring vanilla's own reset.
 - Removed the now-obsolete `ClearStaleSlotIcon` workaround and `GrabAnimationWaitTimeout` from `ProcessChuteFinalizeQueue` (it had been waiting for `isGrabbingObjectAnimation` to clear, but the real race was in `StoreAllInChuteCoroutine`'s detach step, which is now guarded correctly at its source).
 
-## [0.1.9] - 2026-08-28
+## [0.1.9] - 2026-08-28 (BETA)
 
 ### Fixed
 
 - Fixed chute auto-store carryWeight not resetting after storing all items. After storing items, the player's displayed weight would remain at stale high values (e.g. "37 lbs" when empty). Root cause: fixing the chute-store NRE bug made vanilla's `DestroyItemInSlot` reliably subtract weight for every item, but `StoreAllInChuteCoroutine` was still also manually subtracting at detach time and `ProcessChuteFinalizeQueue` was adding it back before equipping—a lossy dance via `Mathf.Clamp(_, 1f, 10f)` that left residual weight. Now `carryWeight` is untouched at detach time and only modified once per item by vanilla's subtraction during the equip-and-destroy step.
 
-## [0.1.8] - 2026-08-28
+## [0.1.8] - 2026-08-28 (BETA)
 
 ### Fixed
 
@@ -38,7 +38,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Extended the stop condition to cover falling without jumping (e.g. stepping off the elevated ship), not just intentional jump input, via the new `isFallingNoJump` flag check.
 - Fixed chute auto-store item duplication bug: items would sometimes remain physicallly in the world and grabbable even after being stored in inventory. Root cause was `PlayerControllerB.DestroyItemInSlotAndSync` only immediately despawns the `NetworkObject` for the host; all other clients must wait for a client→host→everyone RPC round trip. The old implementation fired independent fire-and-forget coroutines per item with no despawn confirmation and trusted slot indices captured before delayed destruction. Under lag, the RPC could silently fail, leaving data stored while the physical pickup remained—a duplicate. Replaced with a single serialized `ProcessChuteFinalizeQueue` coroutine that confirms each despawn with polling before moving to the next item.
 
-## [0.1.7] - 2026-08-28
+## [0.1.7] - 2026-08-28 (BETA)
 
 ### Added
 
@@ -67,13 +67,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Fixed items disappearing (or the whole drop-all batch vanishing) when dropping multiple items back-to-back with double-tap/force-drop, reported live over multiplayer. `DropAllItemsCoroutine` waited for `currentlyHeldObjectServer` to clear before switching to the next item, but on a laggy connection that wait could time out before the previous item's `ThrowObjectClientRpc` echo actually arrived; switching slots anyway then overwrote `currentlyHeldObjectServer` out from under the still in-flight throw, so the delayed echo found a mismatched reference (logged by the game as `ThrowObjectClientRpc called for an object which is not the same as currentlyHeldObjectServer`) and never finished clearing/placing the item. The coroutine now stops dropping further items if that wait times out instead of switching anyway, so the pending echo can still land on a matching reference. **Note:** The defensive timeout break has been implemented and tested in a debug session, but the overall fix has not yet been validated in a live multiplayer server — users should report any remaining desync issues.
 
-## [0.1.4] - 2026-08-27
+## [0.1.4] - 2026-08-27 (BETA)
 
 ### Changed
 
 - A plain tap of the drop key now drops the held item immediately instead of after a deferred wait, eliminating the ~0.2-0.3s of added latency on every drop. A second tap within the double-tap window drops the rest of your eligible items instead of upgrading a still-pending single drop. As a tradeoff, the blacklist can no longer exempt the currently-held item specifically in a double-tap - it's already gone by the time the second tap registers, the same as it would be for a lone tap.
 
-## [0.1.3] - 2026-08-27
+## [0.1.3] - 2026-08-27 (BETA)
 
 ### Fixed
 
@@ -82,19 +82,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Fixed regular single-item dropping no longer working now that the `DiscardHeldObject` patch above is actually active: it suppresses every vanilla drop triggered by G, including a plain single tap, with nothing previously replacing that behavior. A plain tap now performs a deferred single-item drop (delayed by the double-tap window) so a following second tap can still upgrade it into a drop-all.
 - Fixed the plugin's drop logic never actually running: the `Plugin` instance's own `Update()` (and any GameObject created in `Awake()`, even with `DontDestroyOnLoad`) was being torn down by a scene transition shortly after chainloader startup, before `Start()`/`Update()` ever fired once. The Harmony patches kept working throughout since they patch target methods' IL directly and don't depend on any live instance, which masked the issue. Moved the drop logic to a dedicated runner component created lazily via a `StartOfRound.Awake` postfix, well after that transition has settled.
 
-## [0.1.2] - 2026-08-27
+## [0.1.2] - 2026-08-27 (BETA)
 
 ### Fixed
 
 - **[BETA - unverified in live multiplayer]** Fixed multiplayer issue where non-host clients would not see dropped items visually appear on their screen after double-tapping or force-dropping, despite items being correctly networked and scannable for all players.
 
-## [0.1.1] - 2026-08-26
+## [0.1.1] - 2026-08-26 (BETA)
 
 ### Changed
 
 - Updated package description.
 
-## [0.1.0] - 2026-08-26
+## [0.1.0] - 2026-08-26 (BETA)
 
 ### Added
 
