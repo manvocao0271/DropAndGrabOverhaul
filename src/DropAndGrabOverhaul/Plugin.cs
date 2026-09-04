@@ -49,14 +49,18 @@ public partial class Plugin : BaseUnityPlugin
     private const float MinSettleTime = 1f;
 
     // How long to wait for a chute-stored item to actually despawn over the network before giving
-    // up and logging it as a potential leftover duplicate (see ProcessChuteFinalizeQueue).
-    private const float ChuteDestroyConfirmTimeout = 5f;
+    // up and logging it as a potential leftover duplicate (see ProcessChuteFinalizeQueue). A busy
+    // host (many mods, heavy per-frame work) can take much longer than a few seconds to process a
+    // finalize request - live logs from a non-host client showed confirmations arriving well past
+    // the previous 5s/3-retry budget, so this is intentionally generous rather than tight.
+    private const float ChuteDestroyConfirmTimeout = 20f;
 
     // If the item hasn't despawned this long after the finalize request was (re)sent, assume that
     // message was lost and resend it, rather than waiting out the full ChuteDestroyConfirmTimeout
-    // on a single lost packet.
-    private const float ChuteDestroyRetryInterval = 1f;
-    private const int ChuteDestroyMaxRetries = 3;
+    // on a single lost packet. Spaced out (rather than a tight 1s interval) so retries don't pile
+    // more work onto an already-slow host during the exact window it's struggling to keep up.
+    private const float ChuteDestroyRetryInterval = 4f;
+    private const int ChuteDestroyMaxRetries = 4;
 
     // How long to wait for a real, player-initiated grab (isGrabbingObjectAnimation) to finish
     // before giving up and processing the item anyway (see StoreAllInChuteCoroutine) - bounds the
@@ -466,6 +470,14 @@ public partial class Plugin : BaseUnityPlugin
                 item.fallTime = 0f;
                 HUDManager.Instance.itemSlotIcons[slot].enabled = false;
 
+                // ItemSlots is per-client bookkeeping, not server-authoritative state - vanilla's
+                // own SetObjectAsNoLongerHeld (which the isEquippedItem branch above gets for free
+                // via DiscardHeldObject) clears this immediately on the dropping client, with no
+                // network round trip. Doing the same here means this slot stops showing a
+                // name/sound on hotbar scroll right away, instead of only once the host's despawn
+                // - which can be delayed well behind this item's fall animation - actually lands.
+                player.ItemSlots[slot] = null;
+
                 // Vanilla's DestroyItemInSlot only resets `twoHanded` (and its HUD icon) when the
                 // destroyed item is the actively-equipped one - since only one two-handed item can
                 // ever be held at a time, storing one here without this would leave `twoHanded`
@@ -607,9 +619,18 @@ public partial class Plugin : BaseUnityPlugin
             return;
         }
 
-        using FastBufferWriter writer = new(sizeof(ulong), Unity.Collections.Allocator.Temp);
-        writer.WriteValueSafe(item.NetworkObject.NetworkObjectId);
-        NetworkManager.Singleton.CustomMessagingManager.SendNamedMessage(ChuteFinalizeMessageName, NetworkManager.ServerClientId, writer, NetworkDelivery.Reliable);
+        try
+        {
+            using FastBufferWriter writer = new(sizeof(ulong), Unity.Collections.Allocator.Temp);
+            writer.WriteValueSafe(item.NetworkObject.NetworkObjectId);
+            NetworkManager.Singleton.CustomMessagingManager.SendNamedMessage(ChuteFinalizeMessageName, NetworkManager.ServerClientId, writer, NetworkDelivery.Reliable);
+        }
+        catch (System.Exception e)
+        {
+            // Don't let a send failure escape into ProcessChuteFinalizeQueue's confirm-wait loop -
+            // the caller already retries on its own timeout, so just log and let that happen.
+            Plugin.Log.LogWarning($"Sending chute finalize request for '{item.itemProperties.itemName}' threw ({e.GetType().Name}: {e.Message}) - will retry on the usual timeout.");
+        }
     }
 
     // Host-only handler for ChuteFinalizeMessageName (see StartOfRoundAwakePostfix, only

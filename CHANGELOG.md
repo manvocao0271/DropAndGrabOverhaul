@@ -3,6 +3,14 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.2] - 2026-09-04 (BETA)
+
+### Fixed
+
+- **Chute auto-store: non-host "ghost item" visual desync** — non-host clients could see an item's HUD icon disappear but the name/sound persist on hotbar scroll, hand animation showed holding something, and the physical mesh rendered only on the chute. Root cause: the pocketed/non-equipped branch of StoreAllInChuteCoroutine never cleared player.ItemSlots[slot], unlike the equipped branch. Since ItemSlots is local per-client bookkeeping, this allowed other mods reading that array to keep showing stale references long after the icon was hidden. Now immediately nulls ItemSlots[slot] in the pocketed branch, matching the equipped path.
+- **Increased chute finalize retry budget** for slower hosts: ChuteDestroyConfirmTimeout 5s to 20s, ChuteDestroyRetryInterval 1s to 4s (resends at 4/8/12/16s, 4 total attempts). Live testing showed hosts under heavy mod load can take much longer than the old 3-retry/5s budget to process finalize requests. This gives busy hosts more time without overwhelming them with retry spam.
+- **Added exception safety** to SendChuteFinalizeRequest: wrapped SendNamedMessage in try/catch so a network send failure cannot escape into the confirm-wait loop.
+
 ## [0.2.1] - 2026-09-01 (BETA)
 
 ### Fixed

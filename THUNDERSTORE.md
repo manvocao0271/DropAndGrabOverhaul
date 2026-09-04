@@ -1,14 +1,10 @@
-# Drop And Grab Overhaul
-
-Overhauls item dropping, grabbing, and selling in Lethal Company — drop or sell your whole inventory in one motion, and optionally remove the vanilla grab cooldown.
-
-> **Status:** Early development
-
 ## Design Philosophy
 
 Currently, players manually cycle through their inventory to drop their items and the same tedious work goes for selling on the company counter. Luckily, this does not have to be a permanent problem. The solution is to eliminate the monotonous actions of scrap dropping, grabbing, selling, and storing.
 
 DropAndGrabOverhaul provides a balanced (or at least not overly powerful) alternative to easily do these repetitive and time-consuming actions. This mod lets players immediately drop all looted scrap which favors more time spent in the building. Additionally, high quotas can often lead to large piles of scrap so near-instant grabbing to transport faster becomes a necessity. This is useful with support for the ShipInventoryUpdated mod that lets players store large quantities of scrap quicker.
+
+> **Status:** Early development
 
 ## Features
 
@@ -18,7 +14,7 @@ DropAndGrabOverhaul provides a balanced (or at least not overly powerful) altern
 * **Auto-sell at the company desk** — press the drop key once while looking at the counter to place all your sellable scrap on it automatically, one item at a time
 * **Sell blacklist** — a separate configurable list of items the auto-sell feature will always skip
 * **Configurable grab delay** — shrink the vanilla delay between picking up items down to as little as 0.01s for rapid-fire grabbing
-* **ShipInventoryUpdated chute auto-store** *(optional add-on, requires [ShipInventoryUpdated](https://thunderstore.io/c/lethal-company/p/BobDaBiscuit/ShipInventory/))* — press the drop key once while hovering over the ship's chute to automatically feed your entire inventory into it, one item at a time, including anything you grab while it's still running. Jumping or falling (e.g. off the elevated ship) cancels the rest of the sequence by default (configurable).
+* **ShipInventoryUpdated chute auto-store** *(optional add-on, requires [ShipInventoryUpdated](https://thunderstore.io/c/lethal-company/p/BobDaBiscuit/ShipInventory/))* — press the drop key once while hovering over the ship's chute to automatically feed your entire inventory into it, one item at a time, including anything you grab while it's still running. Jumping or falling (e.g. off the elevated ship) cancels the rest of the sequence by default (configurable). **Limitation:** non-host clients depend on a network round-trip for item despawn confirmation; heavy host load from other mods may cause brief delays. In rare cases with extreme lag or mod conflicts, non-host clients may see "ghost items" (HUD icons/sounds persisting after the item appears to drop) until the host processes the finalize request.
 
 Your originally selected hotbar slot is always restored afterward, even if it ends up empty.
 
@@ -30,9 +26,9 @@ Both the drop blacklist and the sell blacklist default to all of the **store-pur
 
 Designed to play nicely with other inventory/hotbar mods. Optional integrations are never required for the base mod to function.
 
-* **ShipInventoryUpdated** — soft dependency, adds chute auto-storing support
+* **ShipInventoryUpdated** — soft dependency, adds chute auto-storing support (current works on host only)
 
-Planned: HotbarPlus, ReservedItemSlot.
+Planned: ReservedItemSlot, LethalCompany_InputUtils (for custom drop key rebind)
 
 ## Feedback
 
