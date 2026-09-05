@@ -17,6 +17,40 @@ namespace DropAndGrabOverhaul.Compatibility;
 /// .NET JIT only resolves a method's type references when that method is actually invoked, so as
 /// long as callers respect that guard, this class never faults for users who don't have
 /// ShipInventoryUpdated installed.
+///
+/// DESIGN: this class used to reimplement the store transaction itself (build an ItemData,
+/// call Inventory.Add, flip isInShipRoom/scrapPersistedThroughRounds, despawn) and relied on
+/// Plugin.cs to run that host-side and relay non-host requests to the host with a retry timeout.
+/// That's gone, now that we've seen ShipInventoryUpdated's actual source (ChuteStore.cs,
+/// ChuteTrigger.cs, Inventory.cs):
+///
+/// ChuteTrigger doesn't override Interact() at all (only Start/Update, for its hover tooltip and
+/// per-frame InteractionHelper.SetTriggerStatus gating) - it inherits vanilla InteractTrigger's
+/// Interact(Transform) unmodified (confirmed independently - see AttemptStore's remarks; a first
+/// guess that it took a PlayerControllerB directly didn't compile). ChuteStore.Start() is what
+/// wires the actual behaviour in: `trigger.onInteract.AddListener(StoreHeldItem)`. So a completed
+/// [E]-hold really runs vanilla's own Interact(), which resolves a PlayerControllerB from the
+/// Transform it's given and invokes onInteract with it, which calls
+/// ChuteStore.StoreHeldItem(player) - a private static method we can't call directly, but don't
+/// need to: calling Interact() on the same trigger the player is hovering fires the exact same
+/// listener.
+///
+/// Confirmed from ChuteStore.StoreHeldItem's actual body: it does ItemConverter.Convert (returns
+/// ItemData[], confirming it still special-cases BeltBagItem the way our old hand-rolled ItemData
+/// construction couldn't) -> Inventory.Add (confirmed `[ServerRpc(RequireOwnership = false)]` in
+/// Inventory.cs, so any client can call it) -> player.SetItemInElevator(true, true, item) -> then
+/// SEPARATELY player.DestroyItemInSlotAndSync(player.currentItemSlot) to actually clear the slot,
+/// fix carry weight, and despawn/sync the item - the same vanilla method used elsewhere for
+/// destroying/consuming a slotted item. That whole chain runs unconditionally from whichever
+/// client calls Interact(), host or not, because that's what a manual store already does today.
+///
+/// Also confirmed: StoreHeldItem performs NO blacklist/Store-Permission/Only-In-Orbit check of its
+/// own - those are only ever enforced upstream, by ChuteTrigger.Update() calling
+/// InteractionHelper.SetTriggerStatus every frame to keep the trigger's own `interactable` flag
+/// (and hover tooltip) in sync with whatever the player currently holds. That makes our own
+/// `interactable` check in AttemptStore below load-bearing, not just a nicety -
+/// skip it and we'd store blacklisted items unconditionally, since nothing downstream would catch
+/// that for us.
 /// </summary>
 internal static class ShipInventoryCompat
 {
@@ -31,9 +65,12 @@ internal static class ShipInventoryCompat
     }
 
     /// <summary>
-    /// Every non-blacklisted item currently in the player's slots, paired with its slot index, in
-    /// slot order. Doesn't touch the ShipInventoryUpdated inventory or despawn anything itself -
-    /// callers drive the actual storing (see <see cref="FinalizeStoredItem"/>) one item at a time.
+    /// Every item currently in the player's slots that isn't obviously blacklisted, paired with
+    /// its slot index, in slot order. This is only a cheap pre-filter to avoid equipping and
+    /// hovering-checking an item we already know is rejected - it intentionally doesn't need to
+    /// be exhaustive, because <see cref="AttemptStore"/> re-checks the real
+    /// ChuteTrigger.interactable flag (which also covers Store Permission and Only In Orbit,
+    /// neither of which this regex-based pre-filter knows about) right before actually storing.
     /// </summary>
     public static List<(int Slot, GrabbableObject Item)> GetStorableItems(PlayerControllerB player)
     {
@@ -56,46 +93,103 @@ internal static class ShipInventoryCompat
     }
 
     /// <summary>
-    /// Adds a single item's data to the ship inventory, mirroring what
-    /// ShipInventoryUpdated.Scripts.ChuteStore.StoreHeldItem does for a single held item when
-    /// holding [E] on the chute. Called host-side, immediately before despawning the item (see
-    /// Plugin.HostFinalizeChuteItem) - assumes the caller has already handled any visual/weight/
-    /// HUD side effects for taking the item out of the player's hands, this only owns the
-    /// ShipInventoryUpdated-side bookkeeping. Returns the added entry so the caller can pass it to
-    /// <see cref="RemoveFromShipInventory"/> to roll this back if the despawn itself then throws -
-    /// otherwise ShipInventoryUpdated's own Inventory.Count keeps counting a duplicate/undespawned
-    /// item forever, which eventually blocks the chute from accepting anything else once
-    /// Inventory.Count reaches the user-configured MaxItemCount (ChuteTrigger.HasEnoughSpace).
+    /// Whether <see cref="AttemptStore"/> actually invoked ChuteTrigger's real store transaction,
+    /// and if so, whether it completed without throwing. Deliberately doesn't promise the item
+    /// was actually removed - Interact() can return (or throw) before a non-host client's
+    /// Inventory.Add/DestroyItemInSlotAndSync round trip has actually landed, so even
+    /// <see cref="Called"/> callers still need to watch the item for a short window afterward.
     /// </summary>
-    public static ShipInventoryUpdated.Objects.ItemData AddToShipInventory(GrabbableObject item, PlayerControllerB player)
+    public enum ChuteStoreAttempt
     {
-        // Using ItemData's public constructor directly instead of ShipInventoryUpdated's own
-        // (internal) ItemConverter.Convert - loses its BeltBagItem unpacking special-case,
-        // but covers the general "store this item" path the same way.
-        var data = new ShipInventoryUpdated.Objects.ItemData(item, addSaveData: true);
-        ShipInventoryUpdated.Scripts.Inventory.Add(new[] { data });
+        /// <summary>The chute won't currently accept this item (blacklist, Store Permission, Only In Orbit, or no longer hovering it at all) - Interact() was never called.</summary>
+        NotAllowed,
 
-        // Order matters: forces SetItemInElevator to see a state change, but with
-        // scrapPersistedThroughRounds already true it skips awarding profit/quota credit -
-        // storing in the chute isn't the same as delivering it to be sold. Same order
-        // ChuteStore.StoreHeldItem uses.
-        item.isInShipRoom = false;
-        item.scrapPersistedThroughRounds = true;
-        player.SetItemInElevator(true, true, item);
+        /// <summary>Interact() was called and returned normally.</summary>
+        Called,
 
-        return data;
+        /// <summary>
+        /// Interact() itself threw. Inventory.Add runs before the despawn step inside
+        /// StoreHeldItem (see class remarks), so if the exception came from that later half, the
+        /// item may already be logically stored even though it's still physically in the
+        /// player's hands - callers should warn rather than silently retrying it, since that
+        /// risks a second Inventory.Add for the same physical item. Not the utility-slot
+        /// DestroyItemInSlot bug JacobG5's DestroyItemInSlotFix patches - GetStorableItems only
+        /// ever selects items from player.ItemSlots, which doesn't include the utility slot, so
+        /// player.currentItemSlot can't be pointing at it by the time this runs. The real cause
+        /// is unconfirmed; log whatever the exception says rather than guessing at one.
+        /// </summary>
+        Threw
     }
 
     /// <summary>
-    /// Undoes a previous <see cref="AddToShipInventory"/> call whose item never actually
-    /// despawned (see ProcessChuteFinalizeQueue in Plugin.cs) - without this, a single item that
-    /// fails to despawn permanently inflates ShipInventoryUpdated's Inventory.Count, which
-    /// eventually makes ChuteTrigger.HasEnoughSpace return false for every player and locks
-    /// everyone out of storing anything else in the chute for the rest of the save.
+    /// Stores whatever the player is currently holding, exactly as if they'd hovered the chute
+    /// and held [E] until it completed. Callers are responsible for having already equipped the
+    /// item first (see StoreAllInChuteCoroutine) - a manual store requires that too, since
+    /// ChuteStore.StoreHeldItem reads player.currentlyHeldObjectServer, not any item we could
+    /// pass in directly.
+    ///
+    /// STILL WORTH CONFIRMING (we have ChuteStore.cs/ChuteTrigger.cs but not
+    /// InteractionHelper.cs, which owns the actual gating logic):
+    /// - The exact field InteractionHelper.SetTriggerStatus writes to communicate "not currently
+    ///   allowed" - assumed to be `interactable`, since that's the field vanilla's own hover/
+    ///   highlight system already reads and it's inherited from InteractTrigger, not
+    ///   ShipInventoryUpdated-specific. If SetTriggerStatus actually disables the whole component/
+    ///   GameObject instead (e.g. for Only In Orbit), that's still safe here: IsHoveringChute
+    ///   would simply stop returning true for it, and the caller's loop already checks that too.
+    ///
+    /// CONFIRMED (previously assumed, now verified against real signatures/decompiled callers):
+    /// - Interact takes a Transform, not a PlayerControllerB - see the call site below for the
+    ///   independent confirmation. The compiler caught the first wrong guess here (a
+    ///   PlayerControllerB overload doesn't exist) before it could ship.
     /// </summary>
-    public static void RemoveFromShipInventory(ShipInventoryUpdated.Objects.ItemData data)
+    public static ChuteStoreAttempt AttemptStore(PlayerControllerB player, out Exception? exception)
     {
-        ShipInventoryUpdated.Scripts.Inventory.Remove(new[] { data });
+        exception = null;
+
+        // Re-fetching (rather than trusting a trigger reference from an earlier frame) confirms
+        // the player is still hovering ShipInventoryUpdated's chute specifically, not some other
+        // mod's InteractTrigger, and naturally stops us from storing into a chute the player has
+        // since looked away from or walked off of.
+        if (player.hoveringOverTrigger is not ShipInventoryUpdated.Scripts.ChuteTrigger chuteTrigger)
+            return ChuteStoreAttempt.NotAllowed;
+
+        // Load-bearing, not just a mirror of "would a real hover prompt allow this": StoreHeldItem
+        // has no blacklist/Store-Permission/Only-In-Orbit check of its own (confirmed from its
+        // actual body) - this flag, kept in sync every frame by ChuteTrigger.Update() calling
+        // InteractionHelper.SetTriggerStatus, is the only place any of those rules are enforced.
+        if (!chuteTrigger.interactable)
+            return ChuteStoreAttempt.NotAllowed;
+
+        // The exact call a completed manual hold makes. ChuteTrigger doesn't override this -
+        // vanilla's own Interact(Transform) runs, invokes onInteract, and ChuteStore.StoreHeldItem
+        // (a listener registered on that same event in ChuteStore.Start()) does the rest: converts
+        // the item ShipInventoryUpdated's own way (preserving its BeltBagItem special case),
+        // calls its own ownerless-RPC Inventory.Add, then player.DestroyItemInSlotAndSync to
+        // clear the slot, fix carry weight, and despawn - the same for any caller, host or not.
+        //
+        // Interact takes the interacting player's Transform, not the PlayerControllerB itself -
+        // confirmed via ShipVoiceCommands' decompiled source, which calls this exact vanilla
+        // method the same way for an unrelated purpose:
+        // trigger.Interact(((Component)GameNetworkManager.Instance.localPlayerController).transform)
+        // onInteract's own listener (StoreHeldItem) still receives a PlayerControllerB - Interact
+        // resolves that internally from the Transform we hand it, most likely via GetComponent
+        // since PlayerControllerB lives on the same GameObject as its own transform.
+        //
+        // Wrapped because we're calling this programmatically rather than through the input path
+        // it's normally only reached from, and because DestroyItemInSlotAndSync is a real,
+        // documented vanilla footgun (see ChuteStoreAttempt.Threw) - an uncaught exception here
+        // would otherwise kill this whole coroutine mid-batch, silently abandoning every item
+        // still waiting behind whichever one triggered it.
+        try
+        {
+            chuteTrigger.Interact(player.transform);
+            return ChuteStoreAttempt.Called;
+        }
+        catch (Exception e)
+        {
+            exception = e;
+            return ChuteStoreAttempt.Threw;
+        }
     }
 
     // Mirrors ShipInventoryUpdated.Helpers.API.InteractionHelper.IsAllowed (internal, and only

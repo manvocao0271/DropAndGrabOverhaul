@@ -3,6 +3,15 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.3] - 2026-09-05 (BETA) 
+
+### ShipInventoryUpdated chute auto-store — reworked
+
+- Items would sometimes fail or need retries when a non-host player used auto-store to put items in the ship inventory chute. Auto-store now performs the same interaction as manually holding [E] on the chute, instead of routing through a custom store-and-relay-to-host implementation.
+- Store Permission and Only In Orbit settings are now respected during auto-store (previously only the item blacklist was checked).
+- Items ShipInventoryUpdated specially converts (e.g. BeltBag contents) now unpack correctly when auto-stored, instead of losing that handling. Auto-store now stops immediately if the player stops hovering the chute, not just on jump or fall.
+- Auto-store now stops immediately if the player dies mid-sequence. A warning is now logged instead of silently assuming success if an item can't be confirmed as stored — it may already be counted in the ship's inventory even though it's still in your hands, so check for a duplicate rather than storing it again.
+
 ## [0.2.2] - 2026-09-04 (BETA)
 
 ### Fixed
