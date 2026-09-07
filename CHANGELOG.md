@@ -3,6 +3,13 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.4] - 2026-09-07 (BETA)
+
+### Fixed
+- Every-other-item could silently fail to store when the chute pacing delay was set below ~1 second. The chute's own interact cooldown was longer than the configured delay, causing alternating attempts to silently do nothing; auto-store now waits out that cooldown instead of losing the attempt.
+- The chute's interact cooldown was hardcoded to ~1 second regardless of configuration, so lowering the store delay below that had no real effect on throughput. It's now overridden to match the configured delay — this also speeds up manually holding [E] on the chute repeatedly, not just auto-store.
+- After auto-store finished, the currently-equipped hotbar slot could be left on an arbitrary slot (whichever item was processed last) instead of returning to normal, which could affect where newly-grabbed items landed. It now restores the slot that was equipped before auto-store started.
+
 ## [0.2.3] - 2026-09-05 (BETA) 
 
 ### ShipInventoryUpdated chute auto-store — reworked

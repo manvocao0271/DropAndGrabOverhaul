@@ -30,6 +30,7 @@ namespace DropAndGrabOverhaul;
 /// The BepInEx plugin class of DropAndGrabOverhaul.
 /// </summary>
 [BepInAutoPlugin]
+[BepInDependency("com.rune580.LethalCompanyInputUtils", BepInDependency.DependencyFlags.HardDependency)]
 public partial class Plugin : BaseUnityPlugin
 {
     internal static ManualLogSource Log { get; private set; } = null!;
@@ -108,13 +109,19 @@ public partial class Plugin : BaseUnityPlugin
 
         // ShipInventoryUpdated compatibility: pressing the drop key once while hovering its chute
         // stores the whole inventory (including anything grabbed afterwards) until it's empty, if
-        // that mod happens to be installed
+        // that mod happens to be installed. The player doesn't need to keep looking at the chute
+        // for this to keep working - AcquireHoveredChute captures a reusable handle up front, and
+        // the coroutine's own stop condition is player.isInHangarShipRoom rather than requiring
+        // continued hover (see StoreAllInChuteCoroutine's remarks for why that's the right check).
         if (ShipInventoryCompat.IsLoaded && ShipInventoryCompat.IsHoveringChute(player) && InputHandler.IsDropKeyPressed())
         {
             // Only start the coroutine if one isn't already running, otherwise it never
             // gets past the first item's delay before being killed and restarted
             if (storeInChuteCoroutine == null)
-                storeInChuteCoroutine = runner!.StartCoroutine(StoreAllInChuteCoroutine(player));
+            {
+                object chuteHandle = ShipInventoryCompat.AcquireHoveredChute(player)!;
+                storeInChuteCoroutine = runner!.StartCoroutine(StoreAllInChuteCoroutine(player, chuteHandle));
+            }
             lastChuteActivityTime = Time.time;
             InputHandler.ResetDropKeyTracking();
             return;
@@ -367,6 +374,18 @@ public partial class Plugin : BaseUnityPlugin
     // to relay to the host, retry, or roll back. See ShipInventoryCompat's class remarks for the
     // full chain, confirmed against ShipInventoryUpdated's actual ChuteStore.cs/ChuteTrigger.cs.
     //
+    // The player doesn't need to keep hovering the chute for this to keep running: chuteHandle is
+    // acquired once, up front (see RunUpdate), and reused across every iteration instead of
+    // re-deriving it from player.hoveringOverTrigger each time - which is what previously forced
+    // the player to stand still staring at the chute the whole time. The stop condition is now
+    // player.isInHangarShipRoom instead of continued hover, matching the exact field
+    // ChuteTrigger.Update() itself gates its own interactable-refresh on (confirmed in
+    // ChuteTrigger.cs) - so as long as the player stays in that room, both ChuteTrigger's own
+    // gating and our read of it remain live and consistent, whatever they're looking at. This
+    // means the player can walk away from the chute mid-sequence to grab more scrap, and it'll
+    // keep getting picked up by GetStorableItems and stored in the background, as long as they
+    // don't leave the hangar room entirely.
+    //
     // This rewrite no longer adjusts player.carryWeight or calls SendChangedWeightEvent() itself:
     // ChuteStore.StoreHeldItem's real body ends with player.DestroyItemInSlotAndSync(player.
     // currentItemSlot), the same vanilla method the game itself uses elsewhere to destroy/consume
@@ -376,12 +395,16 @@ public partial class Plugin : BaseUnityPlugin
     // back `player.carryWeight = Mathf.Clamp(player.carryWeight - (item.itemProperties.weight -
     // 1f), 1f, 10f);` plus a trailing `StartOfRound.Instance.SendChangedWeightEvent()` once the
     // whole batch is done.
-    private static System.Collections.IEnumerator StoreAllInChuteCoroutine(PlayerControllerB player)
+    private static System.Collections.IEnumerator StoreAllInChuteCoroutine(PlayerControllerB player, object chuteHandle)
     {
         // See DropAllItemsCoroutine's try/finally comment - same reasoning applies here so an
         // uncaught exception can't leave storeInChuteCoroutine stuck non-null forever.
         try
         {
+        // Restored on every exit path (see stoppedEarly: below) so the player's hotbar doesn't
+        // end up resting on whichever slot the last-processed item happened to occupy.
+        int originalSlot = player.currentItemSlot;
+
         // Re-check the player's slots every iteration (instead of snapshotting once up front) so
         // items grabbed after this coroutine already started still get caught and stored too,
         // rather than only ever processing whatever was held at the very start. Items are tracked
@@ -415,12 +438,26 @@ public partial class Plugin : BaseUnityPlugin
                 break;
             }
 
-            // The player walking away from the chute mid-sequence should stop it too, the same as
-            // a manual store would be interrupted by stepping back from the trigger. The old
-            // design never re-checked this once the coroutine started.
-            if (!ShipInventoryCompat.IsHoveringChute(player))
+            // The player leaving the hangar room entirely stops the sequence - this is the same
+            // field ChuteTrigger.Update() itself gates its interactable-refresh on (see
+            // ChuteTrigger.cs), so it's the natural boundary for "am I still somewhere this can
+            // keep working", not "am I still looking at the chute". Deliberately more lenient
+            // than the old hover-only check: the player can turn around, walk off to grab more
+            // scrap, and come back (or not) while this keeps running in the background, as long
+            // as they stay in the room.
+            if (!player.isInHangarShipRoom)
             {
-                Plugin.Log.LogInfo("No longer hovering the chute - stopping the rest of the chute auto-store sequence");
+                Plugin.Log.LogInfo("Left the hangar ship room - stopping the rest of the chute auto-store sequence");
+                break;
+            }
+
+            // Defensive: the cached handle could in principle go stale mid-sequence (e.g. a scene
+            // transition destroying it - see the round-end edge case discussed separately). A
+            // fresh player.hoveringOverTrigger read wouldn't need this, but a handle held across
+            // many frames can outlive the object it pointed to.
+            if (!ShipInventoryCompat.IsChuteHandleValid(chuteHandle))
+            {
+                Plugin.Log.LogWarning("Lost the chute reference mid-sequence - stopping the rest of the chute auto-store sequence");
                 break;
             }
 
@@ -458,21 +495,61 @@ public partial class Plugin : BaseUnityPlugin
 
             processedItems.Add(item);
             string itemName = item.itemProperties.itemName;
+            float itemProcessingStart = Time.time;
 
             // A real manual store always starts from having the item equipped - you can't
             // interact with something you're not holding - so pocketed items get switched to
-            // first. This is a purely local, synchronous call (unlike grabbing a new object from
-            // the world), so no extra wait is needed before the item is considered "held".
+            // first. (An earlier version of this comment doubted whether this switch was truly
+            // synchronous and suspected it as the cause of an "every other item" report - it
+            // wasn't. Confirmed cause: ChuteTrigger's own inherited InteractTrigger cooldown, see
+            // the wait below.)
             if (player.currentlyHeldObjectServer != item)
                 player.SwitchToItemSlot(slot);
 
-            // Give ChuteTrigger's own Update() a frame to re-evaluate `interactable` against the
-            // item we just equipped - that's the same flag a real player's hover prompt reflects,
-            // and AttemptStore trusts it as the final gate (blacklist, Store Permission, Only In
-            // Orbit) rather than us re-deriving those rules ourselves.
-            yield return null;
+            // Waits for two things, either of which can take more than a single frame: (a)
+            // ChuteTrigger's own Update() re-evaluating `interactable` against the item just
+            // equipped, and (b) any cooldown left over from the previous successful Interact()
+            // call clearing (see ShipInventoryCompat.IsChuteOnCooldown's remarks) - confirmed to
+            // be the actual cause of an "every other item" report: with StoreDelayOrbit's short
+            // 0.2s default, the next Interact() call landed while still on the trigger's own
+            // cooldown, which silently does nothing (no exception, no store) rather than queuing
+            // or erroring, and the item then sat through the full despawn-confirm wait below
+            // before being logged as failed and abandoned. Waiting for the cooldown here first
+            // makes our own configured pacing delay a floor rather than the only gate, so a
+            // short delay no longer costs an item outright, just some throughput. Bounded and
+            // re-checks the same early-outs as the main loop, since this can now take a bit
+            // longer than the single frame it used to be.
+            float cooldownWaitStart = Time.time;
+            const float chuteCooldownTimeout = 3f;
+            do
+            {
+                if (player.isPlayerDead)
+                {
+                    Plugin.Log.LogInfo("Player died - stopping the rest of the chute auto-store sequence");
+                    goto stoppedEarly;
+                }
+                if (IsJumpingOrFalling(player))
+                {
+                    Plugin.Log.LogInfo("Player jumped or is falling - stopping the rest of the chute auto-store sequence");
+                    goto stoppedEarly;
+                }
+                if (!player.isInHangarShipRoom)
+                {
+                    Plugin.Log.LogInfo("Left the hangar ship room - stopping the rest of the chute auto-store sequence");
+                    goto stoppedEarly;
+                }
+                yield return null;
+            }
+            while (ShipInventoryCompat.IsChuteOnCooldown(chuteHandle) && Time.time - cooldownWaitStart < chuteCooldownTimeout);
+            float cooldownWaitDuration = Time.time - cooldownWaitStart;
 
-            ShipInventoryCompat.ChuteStoreAttempt attempt = ShipInventoryCompat.AttemptStore(player, out System.Exception? storeException);
+            if (ShipInventoryCompat.IsChuteOnCooldown(chuteHandle))
+            {
+                Plugin.Log.LogWarning($"Chute stayed on cooldown for {chuteCooldownTimeout:F0}s - skipping '{itemName}' for now rather than waiting longer.");
+                continue;
+            }
+
+            ShipInventoryCompat.ChuteStoreAttempt attempt = ShipInventoryCompat.AttemptStore(chuteHandle, player, out System.Exception? storeException);
 
             if (attempt == ShipInventoryCompat.ChuteStoreAttempt.NotAllowed)
             {
@@ -521,7 +598,18 @@ public partial class Plugin : BaseUnityPlugin
                 continue;
             }
 
-            Plugin.Log.LogInfo($"Stored item into ship inventory chute: {itemName}");
+            // Logged with a timing breakdown (not just success/failure) specifically to check a
+            // suspected additional delay beyond the cooldown wait above - e.g. some other equip/
+            // swap delay between switching slots and the item actually being ready to store -
+            // rather than guessing at another wait to add without evidence it's needed. grabWait
+            // covers waiting out a brand-new grab's animation (usually 0 here, since chute items
+            // are already in ItemSlots, not freshly grabbed); cooldownWaitDuration is time spent
+            // in the wait above (includes the mandatory single frame, so a very short number here
+            // is expected and fine); confirmWait is the despawn-confirmation wait below; total is
+            // measured from right after this item was selected. If total noticeably exceeds the
+            // sum of the other three, that gap is time this comment can't currently explain -
+            // worth checking whether it lines up with a per-item pacing/equip delay elsewhere.
+            Plugin.Log.LogInfo($"Stored item into ship inventory chute: {itemName} (grab wait {grabWait:F2}s, cooldown wait {cooldownWaitDuration:F2}s, despawn confirm {confirmWait:F2}s, total {Time.time - itemProcessingStart:F2}s)");
 
             // Waited out frame-by-frame (instead of a single WaitForSeconds) so a jump/fall or
             // death can still be caught mid-wait - isJumping only stays true for ~0.25s after the
@@ -547,7 +635,31 @@ public partial class Plugin : BaseUnityPlugin
         }
 
         stoppedEarly:
-        ;
+        // Return to whatever was equipped before this sequence started, so the hotbar doesn't
+        // end up resting on an arbitrary slot - whichever item happened to be processed last -
+        // once this finishes. Matters more now that the player is expected to be doing other
+        // things (like grabbing more scrap) while this runs in the background: vanilla's own
+        // logic for "which slot does a newly grabbed item land in" reads currentItemSlot as its
+        // starting point, so leaving it on a stale, now-empty slot instead of a predictable one
+        // made freshly-grabbed items land somewhere unexpected.
+        //
+        // Mirrors DropAllItemsCoroutine's own restore condition: skipped if something is
+        // currently held (a store still resolving, or the player having grabbed something new
+        // in the meantime) to avoid clobbering an in-flight state. Wrapped since player could in
+        // principle already be a stale reference by this point (e.g. the round-end scene-
+        // transition edge case discussed separately) - this shouldn't throw on top of whatever
+        // already caused the sequence to end.
+        try
+        {
+            if (player.currentItemSlot != originalSlot && player.currentlyHeldObjectServer == null)
+            {
+                player.SwitchToItemSlot(originalSlot);
+            }
+        }
+        catch (System.Exception e)
+        {
+            Plugin.Log.LogWarning($"Restoring the original hotbar slot after chute auto-store threw ({e.GetType().Name}: {e.Message}) - harmless, just means the hotbar might rest on the last-processed slot instead.");
+        }
         }
         finally
         {
@@ -605,9 +717,22 @@ public partial class Plugin : BaseUnityPlugin
         return true;
     }
 
-    // Harmony patch to shorten the vanilla 0.2s grab cooldown to the configured delay.
-    // InteractTrigger.cooldownTime is what Interact() copies into currentCooldownValue on every
-    // successful grab, so overriding it here is enough - no need to fight the cooldown elsewhere.
+    // Harmony patch to shorten the vanilla 0.2s grab cooldown to the configured delay, and (if
+    // ShipInventoryUpdated is loaded) the chute's own InteractTrigger cooldown to our configured
+    // chute pacing delay. InteractTrigger.cooldownTime is what Interact() copies into
+    // currentCooldownValue on every successful interact, so overriding it here - before the
+    // original method runs - is enough; no need to fight the cooldown elsewhere.
+    //
+    // The chute branch exists because ShipInventoryUpdated's own chute prefab ships with a
+    // cooldownTime around 1 second (confirmed empirically: AttemptStore's cooldown-wait loop was
+    // consistently landing on either ~0.02s or ~0.79-0.80s, never in between, which is the
+    // signature of a real ~1s cooldown against a 0.2s pacing delay, not the 0.2s originally
+    // suspected). ChuteStore.cs never touches cooldownTime itself - it only sets timeToHold, a
+    // separate field entirely - so that ~1s default was never something StoreDelayLanded/Orbit
+    // could reach on their own no matter how low they were set, regardless of AttemptStore's own
+    // cooldown-wait already preventing the item loss that mismatch used to cause. Overriding it
+    // here makes the configured pacing delay the actual source of truth for both auto-store and
+    // a real player manually holding [E] repeatedly, rather than a hardcoded prefab default.
     [HarmonyPatch(typeof(InteractTrigger), "Interact")]
     [HarmonyPrefix]
     private static void InteractTriggerInteractPrefix(InteractTrigger __instance)
@@ -615,6 +740,12 @@ public partial class Plugin : BaseUnityPlugin
         if (__instance.GetComponentInParent<GrabbableObject>() != null)
         {
             __instance.cooldownTime = GrabConfiguration.GrabDelay;
+        }
+        else if (ShipInventoryCompat.IsLoaded && ShipInventoryCompat.IsChuteTriggerInstance(__instance))
+        {
+            __instance.cooldownTime = StartOfRound.Instance.shipHasLanded
+                ? ShipInventoryConfiguration.StoreDelayLanded
+                : ShipInventoryConfiguration.StoreDelayOrbit;
         }
     }
 

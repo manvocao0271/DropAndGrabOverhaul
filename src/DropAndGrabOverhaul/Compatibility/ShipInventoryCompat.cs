@@ -65,6 +65,64 @@ internal static class ShipInventoryCompat
     }
 
     /// <summary>
+    /// True if the given trigger is specifically ShipInventoryUpdated's chute - lets Plugin's
+    /// global InteractTriggerInteractPrefix patch (which fires for every InteractTrigger in the
+    /// game, not just the chute) decide whether to also override this one's cooldownTime,
+    /// without that patch needing to reference ShipInventoryUpdated's types directly. Callers
+    /// should check IsLoaded first, same as everywhere else in this class.
+    /// </summary>
+    public static bool IsChuteTriggerInstance(InteractTrigger trigger)
+    {
+        return trigger is ShipInventoryUpdated.Scripts.ChuteTrigger;
+    }
+
+    /// <summary>
+    /// Captures a reusable handle to the chute the player is currently hovering, if any, so a
+    /// caller can keep calling <see cref="AttemptStore"/> against the same chute across many
+    /// frames without the player needing to keep looking at it - only this initial acquisition
+    /// needs the hover. Typed as `object` rather than ChuteTrigger specifically so Plugin.cs,
+    /// which this class exists to shield from ever referencing ShipInventoryUpdated's types
+    /// directly, can hold and pass one around without its own IL ever mentioning ChuteTrigger -
+    /// preserving the IsLoaded-gated JIT safety described in this class's remarks.
+    /// </summary>
+    public static object? AcquireHoveredChute(PlayerControllerB player)
+    {
+        return player.hoveringOverTrigger as ShipInventoryUpdated.Scripts.ChuteTrigger;
+    }
+
+    /// <summary>
+    /// True if a handle from <see cref="AcquireHoveredChute"/> still points at a live chute.
+    /// Unity's own destroyed-object equality check covers the object being despawned/replaced
+    /// (e.g. a scene transition) out from under a caller holding this across several frames -
+    /// something a fresh player.hoveringOverTrigger read wouldn't need to worry about, since it
+    /// re-derives the reference every time rather than holding one.
+    /// </summary>
+    public static bool IsChuteHandleValid(object? chuteHandle)
+    {
+        return chuteHandle is ShipInventoryUpdated.Scripts.ChuteTrigger chuteTrigger && chuteTrigger != null;
+    }
+
+    /// <summary>
+    /// True if the chute's own vanilla InteractTrigger cooldown is still counting down from a
+    /// previous successful Interact() call. cooldownTime/currentCooldownValue are plain vanilla
+    /// InteractTrigger fields, not ShipInventoryUpdated-specific - already confirmed to exist and
+    /// be directly accessible by Plugin's own InteractTriggerInteractPrefix patch, which reads
+    /// and writes __instance.cooldownTime on this same base type. Interact() sets
+    /// currentCooldownValue from cooldownTime on every successful call; calling Interact() again
+    /// before that clears is a silent no-op - no exception, no store - which is what produced an
+    /// "every other item" pattern once a configured pacing delay (StoreDelayOrbit's short 0.2s
+    /// default especially) turned out to be shorter than this cooldown. Callers should wait for
+    /// this to clear before calling AttemptStore again, rather than relying on their own pacing
+    /// delay alone to happen to be long enough.
+    /// </summary>
+    public static bool IsChuteOnCooldown(object? chuteHandle)
+    {
+        return chuteHandle is ShipInventoryUpdated.Scripts.ChuteTrigger chuteTrigger
+            && chuteTrigger != null
+            && chuteTrigger.currentCooldownValue > 0f;
+    }
+
+    /// <summary>
     /// Every item currently in the player's slots that isn't obviously blacklisted, paired with
     /// its slot index, in slot order. This is only a cheap pre-filter to avoid equipping and
     /// hovering-checking an item we already know is rejected - it intentionally doesn't need to
@@ -101,7 +159,7 @@ internal static class ShipInventoryCompat
     /// </summary>
     public enum ChuteStoreAttempt
     {
-        /// <summary>The chute won't currently accept this item (blacklist, Store Permission, Only In Orbit, or no longer hovering it at all) - Interact() was never called.</summary>
+        /// <summary>The chute won't currently accept this item (blacklist, Store Permission, Only In Orbit, or the handle is no longer valid) - Interact() was never called.</summary>
         NotAllowed,
 
         /// <summary>Interact() was called and returned normally.</summary>
@@ -123,40 +181,41 @@ internal static class ShipInventoryCompat
 
     /// <summary>
     /// Stores whatever the player is currently holding, exactly as if they'd hovered the chute
-    /// and held [E] until it completed. Callers are responsible for having already equipped the
-    /// item first (see StoreAllInChuteCoroutine) - a manual store requires that too, since
-    /// ChuteStore.StoreHeldItem reads player.currentlyHeldObjectServer, not any item we could
-    /// pass in directly.
+    /// and held [E] until it completed. Takes a handle from <see cref="AcquireHoveredChute"/>
+    /// rather than re-deriving one from player.hoveringOverTrigger itself, specifically so this
+    /// keeps working across many calls without the player needing to keep looking at the chute -
+    /// callers should still check <see cref="IsChuteHandleValid"/> first. Callers are also
+    /// responsible for having already equipped the item (see StoreAllInChuteCoroutine) - a manual
+    /// store requires that too, since ChuteStore.StoreHeldItem reads
+    /// player.currentlyHeldObjectServer, not any item we could pass in directly.
     ///
     /// STILL WORTH CONFIRMING (we have ChuteStore.cs/ChuteTrigger.cs but not
     /// InteractionHelper.cs, which owns the actual gating logic):
     /// - The exact field InteractionHelper.SetTriggerStatus writes to communicate "not currently
     ///   allowed" - assumed to be `interactable`, since that's the field vanilla's own hover/
     ///   highlight system already reads and it's inherited from InteractTrigger, not
-    ///   ShipInventoryUpdated-specific. If SetTriggerStatus actually disables the whole component/
-    ///   GameObject instead (e.g. for Only In Orbit), that's still safe here: IsHoveringChute
-    ///   would simply stop returning true for it, and the caller's loop already checks that too.
+    ///   ShipInventoryUpdated-specific.
+    /// - ChuteTrigger.Update() only refreshes `interactable` while player.isInHangarShipRoom is
+    ///   true (confirmed from ChuteTrigger.cs) - which is also why the caller's loop now checks
+    ///   that same field to decide when to stop, instead of requiring the player to keep hovering.
     ///
     /// CONFIRMED (previously assumed, now verified against real signatures/decompiled callers):
     /// - Interact takes a Transform, not a PlayerControllerB - see the call site below for the
     ///   independent confirmation. The compiler caught the first wrong guess here (a
     ///   PlayerControllerB overload doesn't exist) before it could ship.
     /// </summary>
-    public static ChuteStoreAttempt AttemptStore(PlayerControllerB player, out Exception? exception)
+    public static ChuteStoreAttempt AttemptStore(object chuteHandle, PlayerControllerB player, out Exception? exception)
     {
         exception = null;
 
-        // Re-fetching (rather than trusting a trigger reference from an earlier frame) confirms
-        // the player is still hovering ShipInventoryUpdated's chute specifically, not some other
-        // mod's InteractTrigger, and naturally stops us from storing into a chute the player has
-        // since looked away from or walked off of.
-        if (player.hoveringOverTrigger is not ShipInventoryUpdated.Scripts.ChuteTrigger chuteTrigger)
+        if (chuteHandle is not ShipInventoryUpdated.Scripts.ChuteTrigger chuteTrigger || chuteTrigger == null)
             return ChuteStoreAttempt.NotAllowed;
 
         // Load-bearing, not just a mirror of "would a real hover prompt allow this": StoreHeldItem
         // has no blacklist/Store-Permission/Only-In-Orbit check of its own (confirmed from its
-        // actual body) - this flag, kept in sync every frame by ChuteTrigger.Update() calling
-        // InteractionHelper.SetTriggerStatus, is the only place any of those rules are enforced.
+        // actual body) - this flag, kept in sync every frame (while player.isInHangarShipRoom -
+        // see remarks above) by ChuteTrigger.Update() calling InteractionHelper.SetTriggerStatus,
+        // is the only place any of those rules are enforced.
         if (!chuteTrigger.interactable)
             return ChuteStoreAttempt.NotAllowed;
 
