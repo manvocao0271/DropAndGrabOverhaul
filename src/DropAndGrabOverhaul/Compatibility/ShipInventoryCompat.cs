@@ -36,15 +36,23 @@ internal static class ShipInventoryCompat
 
     public static bool IsChuteOnCooldown(object? chuteHandle)
     {
+        // InteractTrigger.Interact() itself only proceeds once currentCooldownValue is
+        // strictly negative (its own gate is `if (currentCooldownValue >= 0f) return;`),
+        // so mirror that exact boundary here instead of treating exactly 0 as "ready" -
+        // otherwise there's a razor-thin window where this reports "not on cooldown"
+        // one frame before Interact() would still silently decline.
         return chuteHandle is ShipInventoryUpdated.Scripts.ChuteTrigger chuteTrigger
             && chuteTrigger != null
-            && chuteTrigger.currentCooldownValue > 0f;
+            && chuteTrigger.currentCooldownValue >= 0f;
     }
 
     public static List<(int Slot, GrabbableObject Item)> GetStorableItems(PlayerControllerB player)
     {
         string? blacklist = GetChuteBlacklistRaw();
         var result = new List<(int, GrabbableObject)>();
+
+        if (player.ItemSlots == null)
+            return result;
 
         for (int i = 0; i < player.ItemSlots.Length; i++)
         {
@@ -70,14 +78,25 @@ internal static class ShipInventoryCompat
         Threw
     }
 
-    public static ChuteStoreAttempt AttemptStore(object chuteHandle, PlayerControllerB player, out Exception? exception)
+    public static ChuteStoreAttempt AttemptStore(
+        object chuteHandle,
+        PlayerControllerB player,
+        GrabbableObject expectedItem,
+        out Exception? exception)
     {
         exception = null;
 
-        if (chuteHandle is not ShipInventoryUpdated.Scripts.ChuteTrigger chuteTrigger || chuteTrigger == null)
+        if (expectedItem == null)
+            return ChuteStoreAttempt.NotAllowed;
+
+        if (chuteHandle is not ShipInventoryUpdated.Scripts.ChuteTrigger chuteTrigger
+            || chuteTrigger == null)
             return ChuteStoreAttempt.NotAllowed;
 
         if (!chuteTrigger.interactable)
+            return ChuteStoreAttempt.NotAllowed;
+
+        if (player.currentlyHeldObjectServer != expectedItem)
             return ChuteStoreAttempt.NotAllowed;
 
         try
@@ -114,17 +133,43 @@ internal static class ShipInventoryCompat
         return false;
     }
 
+    // Resolved lazily and cached below - GetStorableItems calls into this once per
+    // storable-item scan (i.e. up to a few times a second while auto-storing), and
+    // the reflected members themselves never change shape at runtime, only their
+    // values do.
+    private static FieldInfo? cachedInstanceField;
+    private static FieldInfo? cachedChuteField;
+    private static FieldInfo? cachedBlacklistField;
+    private static PropertyInfo? cachedValueProperty;
+    private static bool triedToResolveInstanceField;
+
     private static string? GetChuteBlacklistRaw()
     {
         try
         {
-            Type? configType = Type.GetType("ShipInventoryUpdated.Configurations.Configuration, ShipInventoryUpdated");
-            object? instance = configType?.GetField("Instance", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
-            object? chute = instance != null
-                ? configType!.GetField("Chute", BindingFlags.Public | BindingFlags.Instance)?.GetValue(instance)
-                : null;
-            object? blacklistEntry = chute?.GetType().GetField("Blacklist", BindingFlags.Public | BindingFlags.Instance)?.GetValue(chute);
-            return blacklistEntry?.GetType().GetProperty("Value")?.GetValue(blacklistEntry) as string;
+            if (!triedToResolveInstanceField)
+            {
+                triedToResolveInstanceField = true;
+                Type? configType = Type.GetType("ShipInventoryUpdated.Configurations.Configuration, ShipInventoryUpdated");
+                cachedInstanceField = configType?.GetField("Instance", BindingFlags.Public | BindingFlags.Static);
+            }
+
+            object? instance = cachedInstanceField?.GetValue(null);
+            if (instance == null)
+                return null;
+
+            cachedChuteField ??= instance.GetType().GetField("Chute", BindingFlags.Public | BindingFlags.Instance);
+            object? chute = cachedChuteField?.GetValue(instance);
+            if (chute == null)
+                return null;
+
+            cachedBlacklistField ??= chute.GetType().GetField("Blacklist", BindingFlags.Public | BindingFlags.Instance);
+            object? blacklistEntry = cachedBlacklistField?.GetValue(chute);
+            if (blacklistEntry == null)
+                return null;
+
+            cachedValueProperty ??= blacklistEntry.GetType().GetProperty("Value");
+            return cachedValueProperty?.GetValue(blacklistEntry) as string;
         }
         catch (Exception e)
         {

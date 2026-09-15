@@ -49,9 +49,6 @@ public partial class Plugin : BaseUnityPlugin
         harmonyInstance = new Harmony("com.github.manvocao0271.dropandgraboverhaul");
         harmonyInstance.PatchAll(typeof(Plugin));
 
-
-
-
         Log.LogInfo($"Plugin {Name} is loaded!");
     }
 
@@ -105,7 +102,7 @@ public partial class Plugin : BaseUnityPlugin
         }
 
         bool isForceDropping = InputHandler.IsForceDropHeld();
-        
+
         bool isDoubleTap = !isForceDropping && InputHandler.IsDoubleTapDrop();
 
         if (!isForceDropping && !isDoubleTap)
@@ -241,163 +238,228 @@ public partial class Plugin : BaseUnityPlugin
     {
         try
         {
-        int originalSlot = player.currentItemSlot;
+            int originalSlot = player.currentItemSlot;
 
-        var processedItems = new HashSet<GrabbableObject>();
-        while (true)
-        {
-            if (player.isPlayerDead)
+            var processedItems = new HashSet<GrabbableObject>();
+
+            while (true)
             {
-                Plugin.Log.LogInfo("Player died - stopping the rest of the chute auto-store sequence");
-                break;
-            }
-
-            if (IsJumpingOrFalling(player))
-            {
-                Plugin.Log.LogInfo("Player jumped or is falling - stopping the rest of the chute auto-store sequence");
-                break;
-            }
-
-            if (!player.isInHangarShipRoom)
-            {
-                Plugin.Log.LogInfo("Left the hangar ship room - stopping the rest of the chute auto-store sequence");
-                break;
-            }
-
-            if (!ShipInventoryCompat.IsChuteHandleValid(chuteHandle))
-            {
-                Plugin.Log.LogWarning("Lost the chute reference mid-sequence - stopping the rest of the chute auto-store sequence");
-                break;
-            }
-
-            List<(int Slot, GrabbableObject Item)> items = ShipInventoryCompat.GetStorableItems(player);
-
-            GrabbableObject? item = null;
-            int slot = -1;
-            foreach ((int candidateSlot, GrabbableObject candidateItem) in items)
-            {
-                if (!processedItems.Contains(candidateItem))
+                var loopAbort = GetChuteAbortReason(player, chuteHandle);
+                if (loopAbort is { } loopReason)
                 {
-                    item = candidateItem;
-                    slot = candidateSlot;
+                    LogChuteAbort(loopReason, " - stopping the rest of the chute auto-store sequence");
                     break;
                 }
-            }
 
-            if (item == null)
-                break;
+                List<(int Slot, GrabbableObject Item)> items = ShipInventoryCompat.GetStorableItems(player);
 
-            float grabWait = 0f;
-            while (player.isGrabbingObjectAnimation && player.currentlyGrabbingObject == item && grabWait < GrabAnimationWaitTimeout)
-            {
-                yield return null;
-                grabWait += Time.deltaTime;
-            }
+                GrabbableObject? item = null;
+                int slot = -1;
 
-            processedItems.Add(item);
-            string itemName = item.itemProperties.itemName;
-            float itemProcessingStart = Time.time;
-
-            if (player.currentlyHeldObjectServer != item)
-                player.SwitchToItemSlot(slot);
-
-            float cooldownWaitStart = Time.time;
-            const float chuteCooldownTimeout = 3f;
-            do
-            {
-                if (player.isPlayerDead)
+                foreach ((int candidateSlot, GrabbableObject candidateItem) in items)
                 {
-                    Plugin.Log.LogInfo("Player died - stopping the rest of the chute auto-store sequence");
-                    goto stoppedEarly;
+                    if (!processedItems.Contains(candidateItem))
+                    {
+                        item = candidateItem;
+                        slot = candidateSlot;
+                        break;
+                    }
                 }
-                if (IsJumpingOrFalling(player))
+
+                if (item == null)
+                    break;
+
+                float grabWait = 0f;
+                while (player.isGrabbingObjectAnimation &&
+                       player.currentlyGrabbingObject == item &&
+                       grabWait < GrabAnimationWaitTimeout)
                 {
-                    Plugin.Log.LogInfo("Player jumped or is falling - stopping the rest of the chute auto-store sequence");
-                    goto stoppedEarly;
+                    yield return null;
+                    grabWait += Time.deltaTime;
                 }
-                if (!player.isInHangarShipRoom)
+
+                if (item == null)
                 {
-                    Plugin.Log.LogInfo("Left the hangar ship room - stopping the rest of the chute auto-store sequence");
-                    goto stoppedEarly;
+                    Plugin.Log.LogInfo("Item was destroyed while waiting for its grab animation to finish - skipping it.");
+                    continue;
                 }
-                yield return null;
-            }
-            while (ShipInventoryCompat.IsChuteOnCooldown(chuteHandle) && Time.time - cooldownWaitStart < chuteCooldownTimeout);
-            float cooldownWaitDuration = Time.time - cooldownWaitStart;
 
-            if (ShipInventoryCompat.IsChuteOnCooldown(chuteHandle))
-            {
-                Plugin.Log.LogWarning($"Chute stayed on cooldown for {chuteCooldownTimeout:F0}s - skipping '{itemName}' for now rather than waiting longer.");
-                continue;
-            }
+                processedItems.Add(item);
 
-            ShipInventoryCompat.ChuteStoreAttempt attempt = ShipInventoryCompat.AttemptStore(chuteHandle, player, out System.Exception? storeException);
+                string itemName = item.itemProperties.itemName;
+                float itemProcessingStart = Time.time;
 
-            if (attempt == ShipInventoryCompat.ChuteStoreAttempt.NotAllowed)
-            {
-                Plugin.Log.LogInfo($"Skipping '{itemName}' - the chute won't currently accept it (blacklisted, permission, or orbit setting).");
-                continue;
-            }
+                // item can be destroyed out from under us during any of the yields below
+                // (e.g. it despawns for an unrelated reason). currentlyHeldObjectServer also
+                // reads as "null-ish" once that happens, so a plain equality check against
+                // item could look like a match even though there's nothing left to store -
+                // item's own liveness has to be part of every one of these checks.
+                bool IsEquipped() => item != null && player.currentlyHeldObjectServer == item;
 
-            if (attempt == ShipInventoryCompat.ChuteStoreAttempt.Threw)
-            {
-                Plugin.Log.LogWarning(
-                    $"Storing '{itemName}' threw ({storeException!.GetType().Name}: {storeException.Message}) - " +
-                    "it may already be counted in the ship inventory even though it's still in your hands, so check " +
-                    "for a duplicate before storing it again rather than retrying.");
-                continue;
-            }
-
-            const float despawnConfirmTimeout = 2f;
-            float confirmWait = 0f;
-            while (item != null && confirmWait < despawnConfirmTimeout)
-            {
-                yield return null;
-                confirmWait += Time.deltaTime;
-            }
-
-            if (item != null)
-            {
-                Plugin.Log.LogWarning(
-                    $"'{itemName}' hasn't left your hands {despawnConfirmTimeout:F0}s after being sent to the chute - " +
-                    "it may already be counted in the ship inventory even though it's still here. Check for a " +
-                    "duplicate before storing it again, or store it manually via the chute's [E] interact.");
-                continue;
-            }
-
-            Plugin.Log.LogInfo($"Stored item into ship inventory chute: {itemName} (grab wait {grabWait:F2}s, cooldown wait {cooldownWaitDuration:F2}s, despawn confirm {confirmWait:F2}s, total {Time.time - itemProcessingStart:F2}s)");
-
-            float pacingDelay = StartOfRound.Instance.shipHasLanded ? ShipInventoryConfiguration.StoreDelayLanded : ShipInventoryConfiguration.StoreDelayOrbit;
-            float waited = 0f;
-            while (waited < pacingDelay)
-            {
-                if (player.isPlayerDead)
+                // Make sure the intended item is actually equipped before
+                // invoking ShipInventoryUpdated's chute interaction.
+                if (!IsEquipped())
                 {
-                    Plugin.Log.LogInfo("Player died - stopping the rest of the chute auto-store sequence");
-                    goto stoppedEarly;
+                    player.SwitchToItemSlot(slot);
+
+                    const float equipTimeout = 2f;
+                    float equipWait = 0f;
+
+                    while (!IsEquipped() && equipWait < equipTimeout)
+                    {
+                        var equipAbort = GetChuteAbortReason(player, chuteHandle);
+                        if (equipAbort is { } equipReason)
+                        {
+                            LogChuteAbort(equipReason, " while equipping item for chute storage");
+                            goto stoppedEarly;
+                        }
+
+                        yield return null;
+                        equipWait += Time.deltaTime;
+                    }
+
+                    if (!IsEquipped())
+                    {
+                        Plugin.Log.LogWarning(
+                            $"Could not equip '{itemName}' in slot {slot} within {equipTimeout:F1}s - " +
+                            "skipping it rather than invoking the chute with the wrong held item.");
+                        continue;
+                    }
                 }
-                if (IsJumpingOrFalling(player))
+
+                float cooldownWaitStart = Time.time;
+                const float chuteCooldownTimeout = 3f;
+
+                do
                 {
-                    Plugin.Log.LogInfo("Player jumped or is falling - stopping the rest of the chute auto-store sequence");
-                    goto stoppedEarly;
+                    var cooldownAbort = GetChuteAbortReason(player, chuteHandle);
+                    if (cooldownAbort is { } cooldownReason)
+                    {
+                        LogChuteAbort(cooldownReason, " - stopping the rest of the chute auto-store sequence");
+                        goto stoppedEarly;
+                    }
+
+                    yield return null;
                 }
-                yield return null;
-                waited += Time.deltaTime;
+                while (ShipInventoryCompat.IsChuteOnCooldown(chuteHandle) &&
+                       Time.time - cooldownWaitStart < chuteCooldownTimeout);
+
+                float cooldownWaitDuration = Time.time - cooldownWaitStart;
+
+                if (ShipInventoryCompat.IsChuteOnCooldown(chuteHandle))
+                {
+                    Plugin.Log.LogWarning(
+                        $"Chute stayed on cooldown for {chuteCooldownTimeout:F0}s - " +
+                        $"skipping '{itemName}' for now rather than waiting longer.");
+                    continue;
+                }
+
+                // Re-check immediately before invoking the interaction. The cooldown wait
+                // above can run for several real seconds, and nothing here blocks the
+                // player's own input during that time - if they manually switch slots or
+                // grab something else while we're waiting, this is what catches the drift
+                // before we hand the wrong item to the chute. (currentlyHeldObjectServer
+                // itself is set synchronously and locally by SwitchToItemSlot, with no
+                // network round-trip involved - the risk here is the player acting during
+                // our own wait, not a sync delay on ShipInventoryUpdated's side.)
+                if (!IsEquipped())
+                {
+                    Plugin.Log.LogWarning(
+                        $"'{itemName}' is no longer the currently held item immediately before chute storage - " +
+                        "skipping it to avoid storing the wrong item.");
+                    continue;
+                }
+
+                ShipInventoryCompat.ChuteStoreAttempt attempt =
+                    ShipInventoryCompat.AttemptStore(
+                        chuteHandle,
+                        player,
+                        item,
+                        out System.Exception? storeException);
+
+                if (attempt == ShipInventoryCompat.ChuteStoreAttempt.NotAllowed)
+                {
+                    Plugin.Log.LogInfo(
+                        $"Skipping '{itemName}' - the chute won't currently accept it right now " +
+                        "(e.g. not enough inventory space, a blacklisted item, or another eligibility check).");
+                    continue;
+                }
+
+                if (attempt == ShipInventoryCompat.ChuteStoreAttempt.Threw)
+                {
+                    Plugin.Log.LogWarning(
+                        $"Storing '{itemName}' threw " +
+                        $"({storeException!.GetType().Name}: {storeException.Message}) - " +
+                        "it may already be counted in the ship inventory even though it's still in your hands, " +
+                        "so check for a duplicate before storing it again rather than retrying.");
+                    continue;
+                }
+
+                // AttemptStore returning Called only confirms Interact() ran without
+                // throwing - ShipInventoryUpdated's underlying InteractTrigger has several
+                // paths (mid-animation, cooldown boundary, etc.) where it silently declines
+                // to fire its own storage callback at all. The despawn wait below, not this
+                // return value, is the real confirmation that something actually happened.
+                const float despawnConfirmTimeout = 2f;
+                float confirmWait = 0f;
+
+                while (item != null && confirmWait < despawnConfirmTimeout)
+                {
+                    yield return null;
+                    confirmWait += Time.deltaTime;
+                }
+
+                if (item != null)
+                {
+                    Plugin.Log.LogWarning(
+                        $"'{itemName}' hasn't left your hands {despawnConfirmTimeout:F0}s after being sent to the chute - " +
+                        "it may already be counted in the ship inventory even though it's still here. " +
+                        "Check for a duplicate before storing it again, or store it manually via the chute's [E] interact.");
+                    continue;
+                }
+
+                Plugin.Log.LogInfo(
+                    $"Stored item into ship inventory chute: {itemName} " +
+                    $"(grab wait {grabWait:F2}s, cooldown wait {cooldownWaitDuration:F2}s, " +
+                    $"despawn confirm {confirmWait:F2}s, total {Time.time - itemProcessingStart:F2}s)");
+
+                float pacingDelay = StartOfRound.Instance.shipHasLanded
+                    ? ShipInventoryConfiguration.StoreDelayLanded
+                    : ShipInventoryConfiguration.StoreDelayOrbit;
+
+                float waited = 0f;
+
+                while (waited < pacingDelay)
+                {
+                    var pacingAbort = GetChuteAbortReason(player, chuteHandle);
+                    if (pacingAbort is { } pacingReason)
+                    {
+                        LogChuteAbort(pacingReason, " - stopping the rest of the chute auto-store sequence");
+                        goto stoppedEarly;
+                    }
+
+                    yield return null;
+                    waited += Time.deltaTime;
+                }
             }
-        }
 
         stoppedEarly:
-        try
-        {
-            if (player.currentItemSlot != originalSlot && player.currentlyHeldObjectServer == null)
+
+            try
             {
-                player.SwitchToItemSlot(originalSlot);
+                if (player.currentItemSlot != originalSlot &&
+                    player.currentlyHeldObjectServer == null)
+                {
+                    player.SwitchToItemSlot(originalSlot);
+                }
             }
-        }
-        catch (System.Exception e)
-        {
-            Plugin.Log.LogWarning($"Restoring the original hotbar slot after chute auto-store threw ({e.GetType().Name}: {e.Message}) - harmless, just means the hotbar might rest on the last-processed slot instead.");
-        }
+            catch (System.Exception e)
+            {
+                Plugin.Log.LogWarning(
+                    $"Restoring the original hotbar slot after chute auto-store threw " +
+                    $"({e.GetType().Name}: {e.Message}) - harmless, just means the hotbar might rest " +
+                    "on the last-processed slot instead.");
+            }
         }
         finally
         {
@@ -408,7 +470,42 @@ public partial class Plugin : BaseUnityPlugin
 
     private static bool IsJumpingOrFalling(PlayerControllerB player)
     {
-        return ShipInventoryConfiguration.StopOnJump && (player.isJumping || player.isFallingFromJump || player.isFallingNoJump);
+        return ShipInventoryConfiguration.StopOnJump &&
+               (player.isJumping ||
+                player.isFallingFromJump ||
+                player.isFallingNoJump);
+    }
+
+    // Shared by every wait loop in StoreAllInChuteCoroutine (the main loop, the equip
+    // wait, the cooldown wait, and the pacing wait) so the abort conditions - and their
+    // log wording - only need to be maintained in one place. Previously each loop
+    // duplicated its own copy of these checks, and only the outer loop checked chute
+    // validity at all.
+    private static (string Message, bool IsWarning)? GetChuteAbortReason(PlayerControllerB player, object chuteHandle)
+    {
+        if (player.isPlayerDead)
+            return ("Player died", false);
+
+        if (IsJumpingOrFalling(player))
+            return ("Player jumped or is falling", false);
+
+        if (!player.isInHangarShipRoom)
+            return ("Left the hangar ship room", false);
+
+        if (!ShipInventoryCompat.IsChuteHandleValid(chuteHandle))
+            return ("Lost the chute reference mid-sequence", true);
+
+        return null;
+    }
+
+    private static void LogChuteAbort((string Message, bool IsWarning) reason, string suffix)
+    {
+        string message = reason.Message + suffix;
+
+        if (reason.IsWarning)
+            Plugin.Log.LogWarning(message);
+        else
+            Plugin.Log.LogInfo(message);
     }
 
     [HarmonyPatch(typeof(StartOfRound), "Awake")]
@@ -421,8 +518,8 @@ public partial class Plugin : BaseUnityPlugin
         GameObject runnerObject = new GameObject("DropAndGrabOverhaulRunner");
         UnityEngine.Object.DontDestroyOnLoad(runnerObject);
         runner = runnerObject.AddComponent<UpdateRunner>();
-        Plugin.Log.LogInfo("UpdateRunner created via StartOfRound.Awake postfix");
 
+        Plugin.Log.LogInfo("UpdateRunner created via StartOfRound.Awake postfix");
     }
 
     [HarmonyPatch(typeof(PlayerControllerB), "DiscardHeldObject")]
@@ -434,7 +531,8 @@ public partial class Plugin : BaseUnityPlugin
 
         if (Keyboard.current != null && Keyboard.current[Key.G].wasPressedThisFrame)
         {
-            Plugin.Log.LogInfo($"DiscardHeldObjectPrefix: suppressing vanilla drop on G press, frame: {Time.frameCount}");
+            Plugin.Log.LogInfo(
+                $"DiscardHeldObjectPrefix: suppressing vanilla drop on G press, frame: {Time.frameCount}");
             return false;
         }
 
@@ -449,7 +547,8 @@ public partial class Plugin : BaseUnityPlugin
         {
             __instance.cooldownTime = GrabConfiguration.GrabDelay;
         }
-        else if (ShipInventoryCompat.IsLoaded && ShipInventoryCompat.IsChuteTriggerInstance(__instance))
+        else if (ShipInventoryCompat.IsLoaded &&
+                 ShipInventoryCompat.IsChuteTriggerInstance(__instance))
         {
             __instance.cooldownTime = StartOfRound.Instance.shipHasLanded
                 ? ShipInventoryConfiguration.StoreDelayLanded
@@ -459,18 +558,25 @@ public partial class Plugin : BaseUnityPlugin
 
     [HarmonyPatch(typeof(PlayerControllerB), "GrabObject", MethodType.Enumerator)]
     [HarmonyTranspiler]
-    private static IEnumerable<CodeInstruction> GrabObjectTranspiler(IEnumerable<CodeInstruction> instructions)
+    private static IEnumerable<CodeInstruction> GrabObjectTranspiler(
+        IEnumerable<CodeInstruction> instructions)
     {
-        MethodInfo getDecrease = typeof(GrabConfiguration).GetMethod(nameof(GrabConfiguration.GetInteractionCooldownDecrease));
+        MethodInfo getDecrease =
+            typeof(GrabConfiguration).GetMethod(
+                nameof(GrabConfiguration.GetInteractionCooldownDecrease));
+
         List<CodeInstruction> instr = new List<CodeInstruction>(instructions);
         int patchedCount = 0;
+
         for (int i = 0; i < instr.Count; i++)
         {
             CodeInstruction instruction = instr[i];
             yield return instruction;
 
-            if (instruction.opcode == OpCodes.Ldc_R4 && (float)instruction.operand == 0.1f
-                && i + 1 < instr.Count && instr[i + 1].opcode == OpCodes.Newobj)
+            if (instruction.opcode == OpCodes.Ldc_R4 &&
+                (float)instruction.operand == 0.1f &&
+                i + 1 < instr.Count &&
+                instr[i + 1].opcode == OpCodes.Newobj)
             {
                 yield return new CodeInstruction(OpCodes.Call, getDecrease);
                 yield return new CodeInstruction(OpCodes.Ldc_R4, 2f);
@@ -479,8 +585,10 @@ public partial class Plugin : BaseUnityPlugin
                 patchedCount++;
             }
 
-            if (instruction.opcode == OpCodes.Ldc_R4 && (float)instruction.operand == 0.2f
-                && i + 1 < instr.Count && instr[i + 1].opcode == OpCodes.Sub)
+            if (instruction.opcode == OpCodes.Ldc_R4 &&
+                (float)instruction.operand == 0.2f &&
+                i + 1 < instr.Count &&
+                instr[i + 1].opcode == OpCodes.Sub)
             {
                 yield return new CodeInstruction(OpCodes.Sub);
                 yield return new CodeInstruction(OpCodes.Call, getDecrease);
@@ -488,6 +596,7 @@ public partial class Plugin : BaseUnityPlugin
             }
         }
 
-        Plugin.Log.LogInfo($"GrabObjectTranspiler patched {patchedCount} delay checkpoint(s)");
+        Plugin.Log.LogInfo(
+            $"GrabObjectTranspiler patched {patchedCount} delay checkpoint(s)");
     }
 }

@@ -3,6 +3,16 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.5] - 2026-09-15 (BETA)
+
+- Improved reliability of auto-storing items into the ship inventory chute, particularly for non-host players.
+
+### Fixed
+- Fixed a rare case where an item destroyed mid-sequence (e.g. it despawned for an unrelated reason) could still be treated as currently held, instead of being correctly skipped.
+- Fixed an edge case in the chute's cooldown check that could very occasionally cause a store attempt to be silently rejected one frame earlier than it should have been.
+- Auto-store now recognizes "not enough ship inventory space" as a normal reason a chute declines an item, rather than only expecting a blacklisted item.
+- Reduced spurious "possible duplicate" warnings that could appear even when nothing had actually gone wrong.
+
 ## [0.2.4] - 2026-09-07 (BETA)
 
 ### Fixed

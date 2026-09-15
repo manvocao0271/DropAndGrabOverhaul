@@ -18,6 +18,10 @@ DropAndGrabOverhaul provides a balanced (or at least not overly powerful) altern
 
 Blacklists default to all of the **store-purchasable grabbable items**. Quick-drop only ever drops scrap and your equipped tools stay safely in your hands.
 
+## Planned
+
+Let players rebind their drop keybind to use this mod's features instead of hardcoding it to G.
+
 ## AI Content
 
 A good majority of this mod's implementation is developed with AI tools. Although I came up with the idea and project roadmap, the codebase is mostly AI-written. Do not install this mod if using AI-generated content is not for you.
