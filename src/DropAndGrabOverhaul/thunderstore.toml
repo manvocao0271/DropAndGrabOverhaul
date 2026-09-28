@@ -7,8 +7,8 @@ repository = "https://thunderstore.io"
 [package]
 namespace = "bobabulkerENTERPRISE"
 name = "DropAndGrabOverhaul"
-versionNumber = "0.2.5"
-description = "[BETA] Double-tap G to drop all scrap. Hold G to force drop all items. Press G at the company to put all scrap on the sell counter at once. Remove grab item cooldown. ShipInventoryUpdated support (work in progress, press G at chute)."
+versionNumber = "0.2.6"
+description = "Double-tap your drop key to drop all scrap. Hold it to force drop all items. Press it at the company counter to put it all on to sell at once. Remove the grab item cooldown."
 websiteUrl = ""
 containsNsfwContent = false
 
@@ -21,7 +21,7 @@ readme = "../../THUNDERSTORE.md"
 outdir = "../../artifacts/thunderstore/"
 
 [[build.copy]]
-source = "../../artifacts/bin/DropAndGrabOverhaul/release/com.github.manvocao0271.dropandgraboverhaul.dll"
+source = "../../artifacts/bin/DropAndGrabOverhaul/release/bobabulkerENTERPRISE.DropAndGrabOverhaul.dll"
 target = "plugins/"
 
 [[build.copy]]

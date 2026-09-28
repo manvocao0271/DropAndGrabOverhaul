@@ -11,7 +11,7 @@ namespace DropAndGrabOverhaul.Input
         private static int dropKeyPressCount = 0;
 
         // Set by ResetDropKeyTracking while the drop key is still held down when an earlier
-        // branch (chute auto-store, desk auto-sell) stops consuming it - see the comment there.
+        // branch (desk auto-sell) stops consuming it - see the comment there.
         // Blocks IsForceDropHeld/IsDoubleTapDrop from acting on that same still-held press until it
         // is genuinely released, so a hold that continues a moment too long past leaving that
         // branch can't accumulate into an unintended drop-all.
@@ -144,11 +144,11 @@ namespace DropAndGrabOverhaul.Input
         }
 
         // IsForceDropHeld/IsDoubleTapDrop are only called once RunUpdate falls through to the
-        // generic drop-all handling - while an earlier branch (chute auto-store, desk auto-sell)
-        // is consuming the same drop-key press instead, dropKeyHoldStartTime/lastDropKeyPressTime never
+        // generic drop-all handling - while the desk auto-sell branch is consuming the same
+        // drop-key press instead, dropKeyHoldStartTime/lastDropKeyPressTime never
         // get updated and go stale. Resetting them here isn't enough on its own though: if the
         // player keeps physically holding the drop key for even a moment after that branch stops applying
-        // (e.g. stepping out of the chute's hover range without letting go), a fresh
+        // (e.g. stepping away from the counter without letting go), a fresh
         // dropKeyHoldStartTime starts counting immediately and can genuinely reach
         // ForceDropHoldDuration (as short as 0.2s) a moment later - a real, unintended force-drop,
         // not a stale-timestamp artifact. Also flags suppressUntilKeyReleased if the key is still

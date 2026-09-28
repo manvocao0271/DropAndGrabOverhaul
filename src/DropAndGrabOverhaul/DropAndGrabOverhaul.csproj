@@ -3,11 +3,11 @@
     <!-- This is the most appropriate target framework for the game's Unity version. -->
     <TargetFramework>netstandard2.1</TargetFramework>
     <!-- This is the GUID of your mod. Example: com.github.YourAccount.BepInExTemplate -->
-    <AssemblyName>com.github.manvocao0271.dropandgraboverhaul</AssemblyName>
+    <AssemblyName>bobabulkerENTERPRISE.DropAndGrabOverhaul</AssemblyName>
     <!-- This is the display name of your mod. Example: BepInEx Template -->
     <AssemblyTitle>DropAndGrabOverhaul</AssemblyTitle>
     <!-- This is the version number of your mod. -->
-    <Version>0.2.5</Version>
+    <Version>0.2.6</Version>
   </PropertyGroup>
 
   <!-- Mod files to copy to the relative BepInEx directory after build -->
@@ -21,14 +21,6 @@
       <DeployModFiles Include="./Assets/bundle" BepInExDir="plugins/" />
     -->
   </ItemGroup>
-  <!-- Compile-time-only reference to ShipInventoryUpdated for optional compatibility (see
-       Compatibility/ShipInventoryCompat.cs). ExcludeAssets="runtime" keeps its DLL out of our
-       own output/plugins folder - it's never bundled or required, only used to typecheck the
-       compat code, which is itself only invoked if the user has actually installed the mod. -->
-  <ItemGroup>
-    <PackageReference Include="LethalCompanyModding-ShipInventoryUpdated" Version="2.0.10" IncludeAssets="compile" ExcludeAssets="runtime" PrivateAssets="all" />
-  </ItemGroup>
-
   <!--
     To reference mod assemblies from Thunderstore packages via NuGet,
     this project includes the following NuGet feed:

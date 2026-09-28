@@ -227,8 +227,6 @@ artifacts/**/*.zip
 artifacts/**
 Config.Build.user.props
 
-icon (v0.2.1).png
-icon (v0.2.3).png
-LC/
+*_game_files
 CLAUDE.md
 vanilla_game_files

@@ -4,8 +4,8 @@ using GameNetcodeStuff;
 namespace DropAndGrabOverhaul.Inventory
 {
     // Single place that knows how to enumerate a player's current inventory slots.
-    // Everything that needs to walk "the player's current items" (drop-all, auto-sell,
-    // ShipInventoryUpdated's chute) should route through here instead of indexing
+    // Everything that needs to walk "the player's current items" (drop-all, auto-sell)
+    // should route through here instead of indexing
     // player.ItemSlots directly, so a future HotbarPlus/ReservedItemSlot integration
     // only has to change this one class - see README's Compatibility section.
     public static class InventoryAccessor
