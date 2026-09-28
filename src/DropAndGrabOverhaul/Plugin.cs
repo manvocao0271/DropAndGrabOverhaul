@@ -1,7 +1,5 @@
 ﻿using BepInEx;
 using BepInEx.Logging;
-using BepInEx.Configuration;
-using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Reflection.Emit;
@@ -12,14 +10,12 @@ using DropAndGrabOverhaul.Inventory;
 using DropAndGrabOverhaul.Configuration;
 using DropAndGrabOverhaul.Compatibility;
 using GameNetcodeStuff;
-using UnityEngine.InputSystem;
 
 namespace DropAndGrabOverhaul;
 
 
 
 [BepInAutoPlugin]
-[BepInDependency("com.rune580.LethalCompanyInputUtils", BepInDependency.DependencyFlags.HardDependency)]
 public partial class Plugin : BaseUnityPlugin
 {
     internal static ManualLogSource Log { get; private set; } = null!;
@@ -107,7 +103,7 @@ public partial class Plugin : BaseUnityPlugin
 
         if (!isForceDropping && !isDoubleTap)
         {
-            if (Keyboard.current != null && Keyboard.current[Key.G].wasPressedThisFrame && player.currentlyHeldObjectServer != null)
+            if (InputHandler.WasDropKeyPressedThisFrame() && player.currentlyHeldObjectServer != null)
             {
                 Plugin.Log.LogInfo("Single tap detected - dropping held item immediately");
                 isDroppingAll = true;
@@ -125,14 +121,7 @@ public partial class Plugin : BaseUnityPlugin
             return;
         }
 
-        var itemsToDropList = new List<GrabbableObject>();
-        for (int i = 0; i < player.ItemSlots.Length; i++)
-        {
-            if (player.ItemSlots[i] != null)
-            {
-                itemsToDropList.Add(player.ItemSlots[i]);
-            }
-        }
+        var itemsToDropList = InventoryAccessor.GetDroppableItems(player);
 
         if (itemsToDropList.Count == 0)
         {
@@ -205,26 +194,29 @@ public partial class Plugin : BaseUnityPlugin
         try
         {
             int soldCount = 0;
-            for (int i = 0; i < player.ItemSlots.Length; i++)
+            foreach ((int slot, GrabbableObject item) in InventoryAccessor.GetItemSlots(player))
             {
-                if (player.ItemSlots[i] != null && player.ItemSlots[i].itemProperties.isScrap)
+                // GetItemSlots snapshots the inventory once up front, but this loop yields
+                // between sales - re-confirm the slot still holds this exact item before
+                // acting on it, in case something else changed slot contents mid-sequence.
+                if (player.ItemSlots[slot] != item || !item.itemProperties.isScrap)
+                    continue;
+
+                string itemName = item.itemProperties.itemName;
+
+                if (SellConfiguration.IsSellBlacklisted(itemName))
                 {
-                    string itemName = player.ItemSlots[i].itemProperties.itemName;
-
-                    if (SellConfiguration.IsSellBlacklisted(itemName))
-                    {
-                        Plugin.Log.LogInfo($"Skipping sell-blacklisted item: {itemName}");
-                        continue;
-                    }
-
-                    player.SwitchToItemSlot(i);
-                    isPlacingOnCounter = true;
-                    desk.PlaceItemOnCounter(player);
-                    isPlacingOnCounter = false;
-                    soldCount++;
-                    Plugin.Log.LogInfo($"Sold item: {itemName}");
-                    yield return new WaitForSeconds(0.2f);
+                    Plugin.Log.LogInfo($"Skipping sell-blacklisted item: {itemName}");
+                    continue;
                 }
+
+                player.SwitchToItemSlot(slot);
+                isPlacingOnCounter = true;
+                desk.PlaceItemOnCounter(player);
+                isPlacingOnCounter = false;
+                soldCount++;
+                Plugin.Log.LogInfo($"Sold item: {itemName}");
+                yield return new WaitForSeconds(0.2f);
             }
             Plugin.Log.LogInfo($"Sold {soldCount} items total");
         }
@@ -529,10 +521,10 @@ public partial class Plugin : BaseUnityPlugin
         if (isPlacingOnCounter || isDroppingAll)
             return true;
 
-        if (Keyboard.current != null && Keyboard.current[Key.G].wasPressedThisFrame)
+        if (InputHandler.WasDropKeyPressedThisFrame())
         {
             Plugin.Log.LogInfo(
-                $"DiscardHeldObjectPrefix: suppressing vanilla drop on G press, frame: {Time.frameCount}");
+                $"DiscardHeldObjectPrefix: suppressing vanilla drop on drop-key press, frame: {Time.frameCount}");
             return false;
         }
 

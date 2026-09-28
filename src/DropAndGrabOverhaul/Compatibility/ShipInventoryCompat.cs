@@ -3,8 +3,8 @@ using System.Collections.Generic;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using BepInEx.Bootstrap;
+using DropAndGrabOverhaul.Inventory;
 using GameNetcodeStuff;
-using UnityEngine;
 
 namespace DropAndGrabOverhaul.Compatibility;
 
@@ -51,19 +51,12 @@ internal static class ShipInventoryCompat
         string? blacklist = GetChuteBlacklistRaw();
         var result = new List<(int, GrabbableObject)>();
 
-        if (player.ItemSlots == null)
-            return result;
-
-        for (int i = 0; i < player.ItemSlots.Length; i++)
+        foreach ((int slot, GrabbableObject item) in InventoryAccessor.GetItemSlots(player))
         {
-            GrabbableObject item = player.ItemSlots[i];
-            if (item == null)
-                continue;
-
             if (IsChuteBlacklisted(item.itemProperties.itemName, blacklist))
                 continue;
 
-            result.Add((i, item));
+            result.Add((slot, item));
         }
 
         return result;

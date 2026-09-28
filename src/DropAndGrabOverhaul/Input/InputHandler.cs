@@ -17,24 +17,63 @@ namespace DropAndGrabOverhaul.Input
         // branch can't accumulate into an unintended drop-all.
         private static bool suppressUntilKeyReleased = false;
 
+        // Vanilla's own drop key is the "Discard" action in the global InputSystem.actions asset
+        // (PlayerControllerB subscribes to it in OnEnable). Polling that same action means the
+        // mod follows whatever the player has rebound it to in the vanilla keybinds menu, with
+        // no separate mod keybind that could drift out of sync. If the action can't be found
+        // (e.g. a future game update renames it) this logs once and every check reports "not
+        // pressed", so the mod does nothing and vanilla's drop behaves normally.
+        private const string DropActionName = "Discard";
+        private static InputAction? dropAction;
+        private static bool loggedMissingDropAction = false;
+
+        private static InputAction? GetDropAction()
+        {
+            if (dropAction != null)
+                return dropAction;
+
+            var actions = InputSystem.actions;
+            if (actions != null)
+                dropAction = actions.FindAction(DropActionName);
+
+            if (dropAction != null)
+            {
+                Plugin.Log.LogInfo(
+                    $"Using vanilla '{DropActionName}' action as the drop key (currently bound to: {dropAction.GetBindingDisplayString()})");
+            }
+            else if (!loggedMissingDropAction)
+            {
+                loggedMissingDropAction = true;
+                Plugin.Log.LogError(
+                    $"Could not find vanilla input action '{DropActionName}' - drop-key features are disabled.");
+            }
+
+            return dropAction;
+        }
+
+        // True only on the frame the drop key went down.
+        public static bool WasDropKeyPressedThisFrame()
+        {
+            return GetDropAction()?.WasPressedThisFrame() ?? false;
+        }
+
+        public static bool IsDropKeyPressed()
+        {
+            return GetDropAction()?.IsPressed() ?? false;
+        }
+
         public static bool IsDoubleTapDrop()
         {
-            if (Keyboard.current == null)
-                return false;
-
             if (suppressUntilKeyReleased)
             {
-                if (Keyboard.current[Key.G].isPressed)
+                if (IsDropKeyPressed())
                     return false;
                 suppressUntilKeyReleased = false;
             }
 
             float doubleTapWindow = InputConfiguration.DoubleTapWindow;
 
-            // Detect the drop key (G by default in Lethal Company)
-            Key dropKey = Key.G;
-            
-            if (Keyboard.current[dropKey].wasPressedThisFrame)
+            if (WasDropKeyPressedThisFrame())
             {
                 float timeSinceLastPress = UnityEngine.Time.time - lastDropKeyPressTime;
 
@@ -70,13 +109,9 @@ namespace DropAndGrabOverhaul.Input
 
         public static bool IsForceDropHeld()
         {
-            if (Keyboard.current == null) return false;
-
-            Key dropKey = Key.G;
-
             if (suppressUntilKeyReleased)
             {
-                if (Keyboard.current[dropKey].isPressed)
+                if (IsDropKeyPressed())
                     return false;
                 suppressUntilKeyReleased = false;
             }
@@ -84,7 +119,7 @@ namespace DropAndGrabOverhaul.Input
             float forceDropDuration = InputConfiguration.ForceDropHoldDuration;
 
             // Check if drop key is currently held
-            if (Keyboard.current[dropKey].isPressed)
+            if (IsDropKeyPressed())
             {
                 // If just pressed, record the time
                 if (dropKeyHoldStartTime < 0)
@@ -108,17 +143,11 @@ namespace DropAndGrabOverhaul.Input
             return false;
         }
 
-        public static bool IsDropKeyPressed()
-        {
-            if (Keyboard.current == null) return false;
-            return Keyboard.current[Key.G].isPressed;
-        }
-
         // IsForceDropHeld/IsDoubleTapDrop are only called once RunUpdate falls through to the
         // generic drop-all handling - while an earlier branch (chute auto-store, desk auto-sell)
-        // is consuming the same G press instead, dropKeyHoldStartTime/lastDropKeyPressTime never
+        // is consuming the same drop-key press instead, dropKeyHoldStartTime/lastDropKeyPressTime never
         // get updated and go stale. Resetting them here isn't enough on its own though: if the
-        // player keeps physically holding G for even a moment after that branch stops applying
+        // player keeps physically holding the drop key for even a moment after that branch stops applying
         // (e.g. stepping out of the chute's hover range without letting go), a fresh
         // dropKeyHoldStartTime starts counting immediately and can genuinely reach
         // ForceDropHoldDuration (as short as 0.2s) a moment later - a real, unintended force-drop,
@@ -130,7 +159,7 @@ namespace DropAndGrabOverhaul.Input
             dropKeyHoldStartTime = -999f;
             lastDropKeyPressTime = -999f;
             dropKeyPressCount = 0;
-            if (Keyboard.current != null && Keyboard.current[Key.G].isPressed)
+            if (IsDropKeyPressed())
                 suppressUntilKeyReleased = true;
         }
     }

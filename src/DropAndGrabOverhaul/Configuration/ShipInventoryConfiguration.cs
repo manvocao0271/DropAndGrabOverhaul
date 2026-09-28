@@ -24,7 +24,7 @@ namespace DropAndGrabOverhaul.Configuration
             storeDelayLandedConfig = config.Bind(
                 section: "ShipInventoryUpdated",
                 key: "StoreDelayLanded",
-                defaultValue: 0.2f,
+                defaultValue: 1f,
                 configDescription: new ConfigDescription(
                     "Delay in seconds between each item stored into the ship chute while the ship has landed on a moon (meant to be slow to avoid making the game too easy).",
                     new AcceptableValueRange<float>(0f, 5f)

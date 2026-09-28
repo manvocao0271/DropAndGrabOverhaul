@@ -6,7 +6,7 @@ A Lethal Company mod that overhauls item dropping, grabbing, and selling: quickl
 
 ## Features
 
-* **Double-tap drop** — tap the drop key (G) to drop the held item immediately; tap again within the window to also drop the rest of your eligible items, skipping blacklisted ones
+* **Double-tap drop** — tap the drop key (G by default, or whatever you've rebound it to in the vanilla keybinds menu) to drop the held item immediately; tap again within the window to also drop the rest of your eligible items, skipping blacklisted ones
 * **Force drop** — hold the drop key to drop everything, ignoring the blacklist
 * **Drop blacklist** — configurable list of items that are never dropped by double-tap/force-drop
 * **Auto-sell at the company desk** — press the drop key once while looking at the counter to automatically place all sellable items on it, one at a time
@@ -70,7 +70,7 @@ StopOnJump               Stop storing the rest of the inventory into the chute i
 
 DropAndGrabOverhaul is being designed with compatibility in mind.
 
-The inventory system will use an abstraction layer so that the core drop logic does not depend directly on a specific hotbar or inventory implementation.
+The inventory system uses an abstraction layer ([Inventory/InventoryAccessor.cs](src/DropAndGrabOverhaul/Inventory/InventoryAccessor.cs)) so that the core drop logic does not depend directly on a specific hotbar or inventory implementation.
 
 Implemented integrations:
 
@@ -140,20 +140,6 @@ DropAndGrabOverhaul/
 └── global.json
 ```
 
-## Development Roadmap
-
-* [x] Create BepInEx plugin project
-* [x] Configure .NET build environment
-* [x] Set up GitHub repository
-* [x] Verify plugin loads in Lethal Company
-* [x] Implement double-tap drop-all with blacklist support
-* [x] Implement force-drop (hold key, ignores blacklist)
-* [x] Implement auto-sell at the company desk with its own blacklist
-* [x] Implement optional grab cooldown removal
-* [x] Add ship chute integration
-* [ ] Package for Thunderstore
-* [ ] Publish initial release
-
 ## Contributing
 
 Issues, suggestions, and pull requests are welcome.
@@ -169,4 +155,3 @@ When reporting a compatibility issue, please include:
 ## License
 
 See [LICENSE](LICENSE) for the project's license.
-
