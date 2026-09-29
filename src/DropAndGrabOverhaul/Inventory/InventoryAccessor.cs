@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using DropAndGrabOverhaul.Compatibility;
 using GameNetcodeStuff;
 
 namespace DropAndGrabOverhaul.Inventory
@@ -48,6 +49,33 @@ namespace DropAndGrabOverhaul.Inventory
             }
 
             return items;
+        }
+
+        /// <summary>
+        /// Items in the main hotbar: every slot except ReservedItemSlotCore's reserved slots.
+        /// Without that mod installed this is the same as <see cref="GetDroppableItems"/>.
+        /// </summary>
+        public static List<GrabbableObject> GetMainHotbarItems(PlayerControllerB? player)
+        {
+            var items = new List<GrabbableObject>();
+            foreach ((int slot, GrabbableObject item) in GetItemSlots(player))
+            {
+                if (!IsReservedSlot(player, slot))
+                {
+                    items.Add(item);
+                }
+            }
+
+            return items;
+        }
+
+        /// <summary>
+        /// True if <paramref name="slot"/> is a ReservedItemSlotCore reserved slot for
+        /// <paramref name="player"/>. Always false when that mod isn't installed.
+        /// </summary>
+        public static bool IsReservedSlot(PlayerControllerB? player, int slot)
+        {
+            return ReservedItemSlotCompat.IsReservedSlot(player, slot);
         }
     }
 }

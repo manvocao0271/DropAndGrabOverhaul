@@ -143,6 +143,19 @@ namespace DropAndGrabOverhaul.Input
             return false;
         }
 
+        // True once the drop key has been held ForceDropHoldDuration + ReservedSlotsHoldDuration, i.e.
+        // the "hold a little longer" step that also drops ReservedItemSlotCore's reserved slots.
+        // Like IsForceDropHeld it's level-triggered (stays true while held). It relies on
+        // IsForceDropHeld having run this frame, since that is what records when the hold started.
+        public static bool IsReservedSlotsHoldReached()
+        {
+            if (dropKeyHoldStartTime < 0 || !IsDropKeyPressed())
+                return false;
+
+            float holdDuration = UnityEngine.Time.time - dropKeyHoldStartTime;
+            return holdDuration >= InputConfiguration.ForceDropHoldDuration + InputConfiguration.ReservedSlotsHoldDuration;
+        }
+
         // IsForceDropHeld/IsDoubleTapDrop are only called once RunUpdate falls through to the
         // generic drop-all handling - while the desk auto-sell branch is consuming the same
         // drop-key press instead, dropKeyHoldStartTime/lastDropKeyPressTime never

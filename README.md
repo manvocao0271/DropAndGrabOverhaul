@@ -5,13 +5,14 @@ A Lethal Company mod that overhauls item dropping, grabbing, and selling: quickl
 ## Features
 
 * **Double-tap drop** — tap the drop key (G by default, or whatever you've rebound it to in the vanilla keybinds menu) to drop the held item immediately; tap again within the window to also drop the rest of your eligible items, skipping blacklisted ones
-* **Force drop** — hold the drop key to drop everything, ignoring the blacklist
+* **Force drop** — hold the drop key to drop everything in your hotbar, ignoring the blacklist
+* **Reserved slot drop** *(optional, requires [ReservedItemSlotCore](https://thunderstore.io/c/lethal-company/p/FlipMods/ReservedItemSlotCore/))* — keep holding a little longer to also drop the items in your reserved item slots
 * **Drop blacklist** — configurable list of items that are never dropped by double-tap/force-drop
 * **Auto-sell at the company desk** — press the drop key once while looking at the counter to automatically place all sellable items on it, one at a time
 * **Sell blacklist** — configurable list of items that auto-sell should skip, separate from the drop blacklist
 * **Configurable grab delay** — lower the delay between picking up items (down to 0.01s) so you can grab in rapid succession
 
-In all cases, the player's originally selected hotbar slot is restored afterward, even if it ends up empty.
+In all cases, the player's originally selected hotbar slot is restored afterward, even if it ends up empty (except a reserved slot this emptied - you're returned to your first hotbar slot instead).
 
 ## Activation
 
@@ -28,7 +29,9 @@ G + G   → Also drop the rest of your eligible items (blacklist respected)
 
 ### Force Drop
 
-Hold the drop key for a configurable duration to drop everything, including blacklisted items.
+Hold the drop key for a configurable duration to drop everything in your hotbar, including blacklisted items.
+
+If [ReservedItemSlotCore](https://thunderstore.io/c/lethal-company/p/FlipMods/ReservedItemSlotCore/) is installed, the first hold only drops your main hotbar. Keep holding for a configurable extra duration to drop the items in your reserved item slots too. Double-tap never drops reserved slots.
 
 ### Auto-Sell
 
@@ -41,7 +44,8 @@ Config is generated on first run under BepInEx's `config/` folder. Sections and 
 ```text
 [Input]
 DoubleTapWindow          Time window in seconds to detect a double-tap (default: 0.2)
-ForceDropHoldDuration    Hold duration in seconds to force-drop everything (default: 0.5)
+ForceDropHoldDuration    Hold duration in seconds to force-drop everything (default: 0.2)
+ReservedSlotsHoldDuration Extra hold time in seconds, after the force drop starts, to also drop reserved item slots - only with ReservedItemSlotCore (default: 0.5)
 
 [Items]
 BlacklistedItems         Comma-separated item names never dropped by double-tap/force-drop
@@ -60,10 +64,13 @@ DropAndGrabOverhaul is being designed with compatibility in mind.
 
 The inventory system uses an abstraction layer ([Inventory/InventoryAccessor.cs](src/DropAndGrabOverhaul/Inventory/InventoryAccessor.cs)) so that the core drop logic does not depend directly on a specific hotbar or inventory implementation.
 
+Implemented integrations:
+
+* ReservedItemSlotCore (soft dependency, no reference needed - see [Compatibility/ReservedItemSlotCompat.cs](src/DropAndGrabOverhaul/Compatibility/ReservedItemSlotCompat.cs))
+
 Planned integrations include:
 
 * HotbarPlus
-* ReservedItemSlot
 
 Optional integrations will not be required for the base mod to function.
 
@@ -131,6 +138,7 @@ DropAndGrabOverhaul/
 * [x] Implement force-drop (hold key, ignores blacklist)
 * [x] Implement auto-sell at the company desk with its own blacklist
 * [x] Implement optional grab cooldown removal
+* [x] Add ReservedItemSlotCore support (hold longer to drop reserved slots)
 * [x] Package for Thunderstore
 * [x] Publish initial release
 

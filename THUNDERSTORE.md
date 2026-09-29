@@ -7,16 +7,14 @@ DropAndGrabOverhaul provides a balanced (or at least not overly powerful) altern
 ## Features
 
 * **Double-tap drop**: drop all scrap/items in main hotbar slots respecting blacklist (HotbarPlus friendly)
-* **Hold drop**: force drop your entire inventory at once, ignoring the blacklist entirely
+* **Hold drop**: force drop your main hotbar at once, ignoring the blacklist entirely
+* **Hold drop, a little longer**: *(optional [ReservedItemSlotCore](https://thunderstore.io/c/lethal-company/p/FlipMods/ReservedItemSlotCore/))* keep holding to also drop everything in your reserved item slots
 * **Drop at the company desk**: drop all your sellable scrap on the counter automatically
 * **Quick grab**: near instantaneous grabbing
 
 ## Blacklists
 
 Blacklists default to all of the **store-purchasable grabbable items**. Quick-drop only ever drops scrap and your equipped tools stay safely in your hands.
-
-## Planned
-First hold layer drops everything in the main hotbar. Second layer, hold a little longer to drop everything in the ReservedItemSlots.
 
 ## AI Content
 

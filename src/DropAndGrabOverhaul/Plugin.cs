@@ -13,6 +13,7 @@ using GameNetcodeStuff;
 namespace DropAndGrabOverhaul;
 
 [BepInAutoPlugin]
+[BepInDependency("FlipMods.ReservedItemSlotCore", BepInDependency.DependencyFlags.SoftDependency)]
 public partial class Plugin : BaseUnityPlugin
 {
     internal static ManualLogSource Log { get; private set; } = null!;
@@ -71,6 +72,10 @@ public partial class Plugin : BaseUnityPlugin
 
         bool isForceDropping = InputHandler.IsForceDropHeld();
 
+        // Holding a while longer after the force drop starts also drops the items in
+        // ReservedItemSlotCore's reserved slots (never any different without that mod installed).
+        bool includeReservedSlots = isForceDropping && InputHandler.IsReservedSlotsHoldReached();
+
         bool isDoubleTap = !isForceDropping && InputHandler.IsDoubleTapDrop();
 
         if (!isForceDropping && !isDoubleTap)
@@ -85,7 +90,10 @@ public partial class Plugin : BaseUnityPlugin
             return;
         }
 
-        Plugin.Log.LogInfo(isForceDropping ? "Force drop detected - dropping ALL items (ignoring blacklist)" : "Double-tap drop detected - dropping all items");
+        // A held force drop reaches this point every frame, so bail out quietly while a drop-all
+        // is still running; the next frame re-checks once it has finished.
+        if (dropAllCoroutine != null)
+            return;
 
         if (player.ItemSlots == null || player.ItemSlots.Length == 0)
         {
@@ -93,16 +101,25 @@ public partial class Plugin : BaseUnityPlugin
             return;
         }
 
-        var itemsToDropList = InventoryAccessor.GetDroppableItems(player);
+        // First hold stage and double-tap only touch the main hotbar; reserved slots are left
+        // alone until the key has been held longer (includeReservedSlots).
+        var itemsToDropList = includeReservedSlots
+            ? InventoryAccessor.GetDroppableItems(player)
+            : InventoryAccessor.GetMainHotbarItems(player);
 
         if (itemsToDropList.Count == 0)
         {
-            Plugin.Log.LogInfo("No items to drop");
+            if (isDoubleTap)
+                Plugin.Log.LogInfo("No items to drop");
             return;
         }
 
-        if (dropAllCoroutine == null)
-            dropAllCoroutine = runner!.StartCoroutine(DropAllItemsCoroutine(player, itemsToDropList, isForceDropping));
+        Plugin.Log.LogInfo(
+            includeReservedSlots ? "Force drop held longer - dropping ALL items including reserved slots (ignoring blacklist)"
+            : isForceDropping ? "Force drop detected - dropping hotbar items (ignoring blacklist)"
+            : "Double-tap drop detected - dropping all items");
+
+        dropAllCoroutine = runner!.StartCoroutine(DropAllItemsCoroutine(player, itemsToDropList, isForceDropping));
     }
 
     private static System.Collections.IEnumerator DropAllItemsCoroutine(PlayerControllerB player, List<GrabbableObject> itemsToDrop, bool isForceDropping)
@@ -112,6 +129,7 @@ public partial class Plugin : BaseUnityPlugin
             int originalSlot = player.currentItemSlot;
 
             int droppedCount = 0;
+            bool droppedReservedItem = false;
             foreach (GrabbableObject item in itemsToDrop)
             {
                 if (item != null)
@@ -125,6 +143,8 @@ public partial class Plugin : BaseUnityPlugin
                         Plugin.Log.LogInfo($"Skipping blacklisted item: {itemName}");
                         continue;
                     }
+
+                    droppedReservedItem |= InventoryAccessor.IsReservedSlot(player, slotIndex);
 
                     player.SwitchToItemSlot(slotIndex);
                     isDroppingAll = true;
@@ -147,9 +167,28 @@ public partial class Plugin : BaseUnityPlugin
                 }
             }
 
-            if (player.currentItemSlot != originalSlot && player.currentlyHeldObjectServer == null)
+            // ReservedItemSlotCore reacts to a dropped reserved item by scheduling a switch to the
+            // next reserved slot (or back to the hotbar). Those switches only run once the player's
+            // hands are empty again - i.e. right after the last drop above - and would move the
+            // player off the slot restored below. Let them run first.
+            if (droppedReservedItem)
             {
-                player.SwitchToItemSlot(originalSlot);
+                yield return new WaitForEndOfFrame();
+                yield return null;
+            }
+
+            // Don't go back to a reserved slot that this drop just emptied; use the first hotbar slot.
+            int restoreSlot = originalSlot;
+            if (restoreSlot >= 0 && restoreSlot < player.ItemSlots.Length
+                && InventoryAccessor.IsReservedSlot(player, restoreSlot)
+                && player.ItemSlots[restoreSlot] == null)
+            {
+                restoreSlot = 0;
+            }
+
+            if (player.currentItemSlot != restoreSlot && player.currentlyHeldObjectServer == null)
+            {
+                player.SwitchToItemSlot(restoreSlot);
             }
 
             Plugin.Log.LogInfo($"Dropped {droppedCount} items total");
