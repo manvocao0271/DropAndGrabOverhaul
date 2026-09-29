@@ -44,7 +44,7 @@ Config is generated on first run under BepInEx's `config/` folder. Sections and 
 ```text
 [Input]
 DoubleTapWindow          Time window in seconds to detect a double-tap (default: 0.2)
-ForceDropHoldDuration    Hold duration in seconds to force-drop everything (default: 0.2)
+ForceDropHoldDuration    Hold duration in seconds to force-drop everything (default: 0.5)
 ReservedSlotsHoldDuration Extra hold time in seconds, after the force drop starts, to also drop reserved item slots - only with ReservedItemSlotCore (default: 0.5)
 
 [Items]
@@ -56,6 +56,10 @@ GrabDelay                Delay in seconds between grabbing items, vanilla is 0.2
 [Sell]
 AutoSellInventory        Enables pressing the drop key once at the counter to auto-sell (default: true)
 SellBlacklistedItems     Comma-separated item names that auto-sell should skip
+
+[Logging]
+LogLevels                Which of this mod's own log levels to show, comma-separated (default: Fatal, Error, Warning)
+                          Acceptable values: None, Fatal, Error, Warning, Message, Info, Debug, All
 ```
 
 ## Compatibility

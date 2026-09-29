@@ -1,4 +1,5 @@
 using BepInEx.Configuration;
+using DropAndGrabOverhaul;
 
 namespace DropAndGrabOverhaul.Configuration
 {
@@ -24,7 +25,7 @@ namespace DropAndGrabOverhaul.Configuration
             forceDropHoldDurationConfig = config.Bind(
                 section: "Input",
                 key: "ForceDropHoldDuration",
-                defaultValue: 0.2f,
+                defaultValue: 0.5f,
                 description: "Hold drop key for this many seconds to force drop all items, ignoring blacklisted items."
             );
 
@@ -38,9 +39,9 @@ namespace DropAndGrabOverhaul.Configuration
             DoubleTapWindow = doubleTapWindowConfig.Value;
             ForceDropHoldDuration = forceDropHoldDurationConfig.Value;
             ReservedSlotsHoldDuration = reservedSlotsHoldDurationConfig.Value;
-            Plugin.Log.LogInfo($"Double-tap window set to {DoubleTapWindow}s");
-            Plugin.Log.LogInfo($"Force drop hold duration set to {ForceDropHoldDuration}s");
-            Plugin.Log.LogInfo($"Reserved slots hold duration set to {ReservedSlotsHoldDuration}s");
+            Logging.Info($"Double-tap window set to {DoubleTapWindow}s");
+            Logging.Info($"Force drop hold duration set to {ForceDropHoldDuration}s");
+            Logging.Info($"Reserved slots hold duration set to {ReservedSlotsHoldDuration}s");
         }
     }
 }

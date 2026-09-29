@@ -1,4 +1,5 @@
 using UnityEngine.InputSystem;
+using DropAndGrabOverhaul;
 using DropAndGrabOverhaul.Configuration;
 using System.Runtime.CompilerServices;
 
@@ -38,13 +39,13 @@ namespace DropAndGrabOverhaul.Input
 
             if (dropAction != null)
             {
-                Plugin.Log.LogInfo(
+                Logging.Info(
                     $"Using vanilla '{DropActionName}' action as the drop key (currently bound to: {dropAction.GetBindingDisplayString()})");
             }
             else if (!loggedMissingDropAction)
             {
                 loggedMissingDropAction = true;
-                Plugin.Log.LogError(
+                Logging.Error(
                     $"Could not find vanilla input action '{DropActionName}' - drop-key features are disabled.");
             }
 

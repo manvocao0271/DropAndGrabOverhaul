@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Reflection;
 using BepInEx.Bootstrap;
+using DropAndGrabOverhaul;
 using GameNetcodeStuff;
 
 namespace DropAndGrabOverhaul.Compatibility
@@ -57,7 +58,7 @@ namespace DropAndGrabOverhaul.Compatibility
             catch (Exception e)
             {
                 disabled = true;
-                Plugin.Log.LogWarning(
+                Logging.Warning(
                     $"ReservedItemSlotCore compat failed ({e.GetType().Name}: {e.Message}) - treating every slot as a main hotbar slot from now on.");
                 return false;
             }
@@ -82,7 +83,7 @@ namespace DropAndGrabOverhaul.Compatibility
             }
             catch (Exception e)
             {
-                Plugin.Log.LogWarning(
+                Logging.Warning(
                     $"ReservedItemSlotCore HUD refresh failed ({e.GetType().Name}: {e.Message}) - reserved slot frames may look stale after a force drop until something else refreshes them.");
             }
         }
@@ -103,12 +104,12 @@ namespace DropAndGrabOverhaul.Compatibility
             }
             catch (Exception e)
             {
-                Plugin.Log.LogWarning($"Failed to inspect ReservedItemSlotCore for its HUD refresh method: {e.Message}");
+                Logging.Warning($"Failed to inspect ReservedItemSlotCore for its HUD refresh method: {e.Message}");
             }
 
             if (updateHudMethod == null)
             {
-                Plugin.Log.LogWarning(
+                Logging.Warning(
                     "ReservedItemSlotCore's HUD refresh method couldn't be resolved (version change?) - reserved slot frames may look stale after a force drop.");
             }
 
@@ -131,17 +132,17 @@ namespace DropAndGrabOverhaul.Compatibility
             }
             catch (Exception e)
             {
-                Plugin.Log.LogWarning($"Failed to inspect ReservedItemSlotCore: {e.Message}");
+                Logging.Warning($"Failed to inspect ReservedItemSlotCore: {e.Message}");
             }
 
             bool resolved = allPlayerDataField != null && isReservedItemSlotMethod != null;
             if (resolved)
             {
-                Plugin.Log.LogInfo("ReservedItemSlotCore detected - reserved item slots are dropped by holding the drop key longer.");
+                Logging.Info("ReservedItemSlotCore detected - reserved item slots are dropped by holding the drop key longer.");
             }
             else
             {
-                Plugin.Log.LogWarning(
+                Logging.Warning(
                     "ReservedItemSlotCore is installed but its API couldn't be resolved (version change?) - treating every slot as a main hotbar slot.");
             }
 

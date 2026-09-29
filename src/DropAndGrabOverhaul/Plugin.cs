@@ -29,6 +29,7 @@ public partial class Plugin : BaseUnityPlugin
     {
         Log = Logger;
 
+        LoggingConfiguration.Initialize(Config);
         ItemBlacklist.Initialize(Config);
         InputConfiguration.Initialize(Config);
         GrabConfiguration.Initialize(Config);
@@ -37,7 +38,7 @@ public partial class Plugin : BaseUnityPlugin
         harmonyInstance = new Harmony(Id);
         harmonyInstance.PatchAll(typeof(Plugin));
 
-        Log.LogInfo($"Plugin {Name} is loaded!");
+        Logging.Info($"Plugin {Name} is loaded!");
     }
 
     private sealed class UpdateRunner : MonoBehaviour
@@ -83,7 +84,7 @@ public partial class Plugin : BaseUnityPlugin
         {
             if (InputHandler.WasDropKeyPressedThisFrame() && player.currentlyHeldObjectServer != null)
             {
-                Plugin.Log.LogInfo("Single tap detected - dropping held item immediately");
+                Logging.Info("Single tap detected - dropping held item immediately");
                 isDroppingAll = true;
                 player.DiscardHeldObject();
                 isDroppingAll = false;
@@ -98,7 +99,7 @@ public partial class Plugin : BaseUnityPlugin
 
         if (player.ItemSlots == null || player.ItemSlots.Length == 0)
         {
-            Plugin.Log.LogInfo("No item slots available");
+            Logging.Info("No item slots available");
             return;
         }
 
@@ -111,11 +112,11 @@ public partial class Plugin : BaseUnityPlugin
         if (itemsToDropList.Count == 0)
         {
             if (isDoubleTap)
-                Plugin.Log.LogInfo("No items to drop");
+                Logging.Info("No items to drop");
             return;
         }
 
-        Plugin.Log.LogInfo(
+        Logging.Info(
             includeReservedSlots ? "Force drop held longer - dropping ALL items including reserved slots (ignoring blacklist)"
             : isForceDropping ? "Force drop detected - dropping hotbar items (ignoring blacklist)"
             : "Double-tap drop detected - dropping all items");
@@ -141,7 +142,7 @@ public partial class Plugin : BaseUnityPlugin
 
                     if (!isForceDropping && ItemBlacklist.IsBlacklisted(itemName))
                     {
-                        Plugin.Log.LogInfo($"Skipping blacklisted item: {itemName}");
+                        Logging.Info($"Skipping blacklisted item: {itemName}");
                         continue;
                     }
 
@@ -152,7 +153,7 @@ public partial class Plugin : BaseUnityPlugin
                     player.DiscardHeldObject();
                     isDroppingAll = false;
                     droppedCount++;
-                    Plugin.Log.LogInfo($"Dropped item: {itemName}");
+                    Logging.Info($"Dropped item: {itemName}");
 
                     float waitStart = UnityEngine.Time.time;
                     while (player.currentlyHeldObjectServer != null && UnityEngine.Time.time - waitStart < 2f)
@@ -162,7 +163,7 @@ public partial class Plugin : BaseUnityPlugin
 
                     if (player.currentlyHeldObjectServer != null)
                     {
-                        Plugin.Log.LogWarning($"Timed out waiting for '{itemName}' to finish dropping over the network - stopping drop-all early to avoid desyncing the rest.");
+                        Logging.Warning($"Timed out waiting for '{itemName}' to finish dropping over the network - stopping drop-all early to avoid desyncing the rest.");
                         break;
                     }
                 }
@@ -191,13 +192,17 @@ public partial class Plugin : BaseUnityPlugin
             {
                 player.SwitchToItemSlot(restoreSlot);
             }
-            
+
+            // RIS only refreshes its reserved-slot HUD for the first reserved item dropped in this
+            // sequence (see ReservedItemSlotCompat.RefreshHudAfterReservedDrop for why); force one
+            // more refresh now that every drop and the slot restore above are done, so slots this
+            // loop emptied after the first don't keep showing a stale frame.
             if (droppedReservedItem)
             {
                 ReservedItemSlotCompat.RefreshHudAfterReservedDrop();
             }
 
-            Plugin.Log.LogInfo($"Dropped {droppedCount} items total");
+            Logging.Info($"Dropped {droppedCount} items total");
 
         }
         finally
@@ -223,7 +228,7 @@ public partial class Plugin : BaseUnityPlugin
 
                 if (SellConfiguration.IsSellBlacklisted(itemName))
                 {
-                    Plugin.Log.LogInfo($"Skipping sell-blacklisted item: {itemName}");
+                    Logging.Info($"Skipping sell-blacklisted item: {itemName}");
                     continue;
                 }
 
@@ -232,10 +237,10 @@ public partial class Plugin : BaseUnityPlugin
                 desk.PlaceItemOnCounter(player);
                 isPlacingOnCounter = false;
                 soldCount++;
-                Plugin.Log.LogInfo($"Sold item: {itemName}");
+                Logging.Info($"Sold item: {itemName}");
                 yield return new WaitForSeconds(0.2f);
             }
-            Plugin.Log.LogInfo($"Sold {soldCount} items total");
+            Logging.Info($"Sold {soldCount} items total");
         }
         finally
         {
@@ -254,7 +259,7 @@ public partial class Plugin : BaseUnityPlugin
         UnityEngine.Object.DontDestroyOnLoad(runnerObject);
         runner = runnerObject.AddComponent<UpdateRunner>();
 
-        Plugin.Log.LogInfo("UpdateRunner created via StartOfRound.Awake postfix");
+        Logging.Info("UpdateRunner created via StartOfRound.Awake postfix");
     }
 
     [HarmonyPatch(typeof(PlayerControllerB), "DiscardHeldObject")]
@@ -266,7 +271,7 @@ public partial class Plugin : BaseUnityPlugin
 
         if (InputHandler.WasDropKeyPressedThisFrame())
         {
-            Plugin.Log.LogInfo(
+            Logging.Info(
                 $"DiscardHeldObjectPrefix: suppressing vanilla drop on drop-key press, frame: {Time.frameCount}");
             return false;
         }
@@ -324,7 +329,7 @@ public partial class Plugin : BaseUnityPlugin
             }
         }
 
-        Plugin.Log.LogInfo(
+        Logging.Info(
             $"GrabObjectTranspiler patched {patchedCount} delay checkpoint(s)");
     }
 }

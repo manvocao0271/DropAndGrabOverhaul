@@ -1,4 +1,5 @@
 using BepInEx.Configuration;
+using DropAndGrabOverhaul;
 using System.Collections.Generic;
 
 namespace DropAndGrabOverhaul.Configuration
@@ -28,7 +29,7 @@ namespace DropAndGrabOverhaul.Configuration
             );
 
             AutoSellInventory = autoSellInventoryConfig.Value;
-            Plugin.Log.LogInfo($"Auto sell inventory: {AutoSellInventory}");
+            Logging.Info($"Auto sell inventory: {AutoSellInventory}");
 
             RefreshSellBlacklist();
         }
@@ -50,7 +51,7 @@ namespace DropAndGrabOverhaul.Configuration
                 }
             }
 
-            Plugin.Log.LogInfo($"Loaded {sellBlacklistedItems.Count} sell-blacklisted items: {string.Join(", ", sellBlacklistedItems)}");
+            Logging.Info($"Loaded {sellBlacklistedItems.Count} sell-blacklisted items: {string.Join(", ", sellBlacklistedItems)}");
         }
 
         public static bool IsSellBlacklisted(string itemName)

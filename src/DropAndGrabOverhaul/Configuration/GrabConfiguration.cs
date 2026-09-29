@@ -1,4 +1,5 @@
 using BepInEx.Configuration;
+using DropAndGrabOverhaul;
 
 namespace DropAndGrabOverhaul.Configuration
 {
@@ -21,7 +22,7 @@ namespace DropAndGrabOverhaul.Configuration
             );
 
             GrabDelay = grabDelayConfig.Value;
-            Plugin.Log.LogInfo($"Grab delay set to {GrabDelay}s");
+            Logging.Info($"Grab delay set to {GrabDelay}s");
         }
 
         // How much shorter than vanilla's 0.2s the configured delay is; subtracted from the

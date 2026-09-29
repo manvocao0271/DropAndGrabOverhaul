@@ -1,4 +1,5 @@
 using BepInEx.Configuration;
+using DropAndGrabOverhaul;
 using System.Collections.Generic;
 
 namespace DropAndGrabOverhaul.Configuration
@@ -38,7 +39,7 @@ namespace DropAndGrabOverhaul.Configuration
                 }
             }
 
-            Plugin.Log.LogInfo($"Loaded {blacklistedItems.Count} blacklisted items: {string.Join(", ", blacklistedItems)}");
+            Logging.Info($"Loaded {blacklistedItems.Count} blacklisted items: {string.Join(", ", blacklistedItems)}");
         }
 
         public static bool IsBlacklisted(string itemName)
@@ -46,7 +47,7 @@ namespace DropAndGrabOverhaul.Configuration
             bool isBlacklisted = blacklistedItems.Contains(itemName);
             if (isBlacklisted)
             {
-                Plugin.Log.LogInfo($"Item '{itemName}' is blacklisted");
+                Logging.Info($"Item '{itemName}' is blacklisted");
             }
             return isBlacklisted;
         }
