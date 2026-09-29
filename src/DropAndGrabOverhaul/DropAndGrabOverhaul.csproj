@@ -1,41 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <!-- This is the most appropriate target framework for the game's Unity version. -->
+    <!-- Most appropriate target framework for the game's Unity version. -->
     <TargetFramework>netstandard2.1</TargetFramework>
-    <!-- This is the GUID of your mod. Example: com.github.YourAccount.BepInExTemplate -->
     <AssemblyName>bobabulkerENTERPRISE.DropAndGrabOverhaul</AssemblyName>
-    <!-- This is the display name of your mod. Example: BepInEx Template -->
     <AssemblyTitle>DropAndGrabOverhaul</AssemblyTitle>
-    <!-- This is the version number of your mod. -->
-    <Version>0.2.6</Version>
+    <!-- Single source of truth for the release version: PackTS passes it to tcli as the package version. -->
+    <Version>0.2.7</Version>
   </PropertyGroup>
 
   <!-- Mod files to copy to the relative BepInEx directory after build -->
   <ItemGroup>
-    <!-- TargetPath is the dll file produced during build. -->
     <DeployModFiles Include="$(TargetPath)" BepInExDir="plugins/" />
-    <!--
-      If your project needs additional files, e.g. asset bundles,
-      you can add them here. Example:
-
-      <DeployModFiles Include="./Assets/bundle" BepInExDir="plugins/" />
-    -->
   </ItemGroup>
-  <!--
-    To reference mod assemblies from Thunderstore packages via NuGet,
-    this project includes the following NuGet feed:
-    https://nuget.windows10ce.com/nuget/v3/index.json
-
-    With this, you can simply depend on a Thunderstore package like so:
-
-    <ItemGroup>
-      <PackageReference Include="ModTeam-ModName" Version="*" />
-    </ItemGroup>
-
-    This will cause the mod to be downloaded and its
-    methods will be available at compile time for your code.
-
-    Note that this does NOT mark the package as a dependency
-    for your Thunderstore package.
-  -->
 </Project>

@@ -111,18 +111,36 @@ artifacts/bin/DropAndGrabOverhaul/
 DropAndGrabOverhaul/
 ├── src/
 │   └── DropAndGrabOverhaul/
+│       ├── Compatibility/
+│       │   └── ReservedItemSlotCompat.cs
 │       ├── Configuration/
 │       │   ├── GrabConfiguration.cs
 │       │   ├── InputConfiguration.cs
 │       │   ├── ItemBlacklist.cs
+│       │   ├── ItemNameList.cs
+│       │   ├── LoggingConfiguration.cs
 │       │   └── SellConfiguration.cs
-│       ├── Input/
+│       ├── Features/
+│       │   ├── AutoSellRoutine.cs
+│       │   ├── CoroutineGate.cs
+│       │   └── DropAllRoutine.cs
+│       ├── Inputs/
+│       │   ├── DropGestureTracker.cs
 │       │   └── InputHandler.cs
 │       ├── Inventory/
 │       │   └── InventoryAccessor.cs
+│       ├── Patches/
+│       │   ├── DiscardHeldObjectPatch.cs
+│       │   ├── GrabCooldownPatch.cs
+│       │   ├── GrabObjectDelayPatch.cs
+│       │   └── StartOfRoundPatch.cs
 │       ├── DropAndGrabOverhaul.csproj
+│       ├── ModLog.cs
 │       ├── Plugin.cs
+│       ├── UpdateRunner.cs
 │       └── thunderstore.toml
+├── docs/
+│   └── archive/
 ├── CHANGELOG.md
 ├── Directory.Build.props
 ├── Directory.Build.targets

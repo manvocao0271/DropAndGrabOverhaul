@@ -1,62 +1,32 @@
 using BepInEx.Configuration;
-using DropAndGrabOverhaul;
-using System.Collections.Generic;
 
-namespace DropAndGrabOverhaul.Configuration
+namespace DropAndGrabOverhaul.Configuration;
+
+internal static class SellConfiguration
 {
-    public static class SellConfiguration
+    private static ConfigEntry<bool> autoSellInventory = null!;
+    private static ItemNameList sellBlacklist = null!;
+
+    public static bool AutoSellInventory => autoSellInventory.Value;
+
+    public static void Initialize(ConfigFile config)
     {
-        private static ConfigEntry<bool> autoSellInventoryConfig = null!;
-        private static ConfigEntry<string> sellBlacklistConfig = null!;
-        private static HashSet<string> sellBlacklistedItems = new();
+        autoSellInventory = config.Bind(
+            section: "Sell",
+            key: "AutoSellInventory",
+            defaultValue: true,
+            description: "Pressing the drop key once while at the company counter will automatically put all sellable items in the inventory on the counter."
+        );
 
-        public static bool AutoSellInventory { get; private set; }
+        sellBlacklist = new ItemNameList(
+            config,
+            section: "Sell",
+            key: "SellBlacklistedItems",
+            description: "Comma-separated list of item names that should NOT be automatically sold (Walkie-talkie, Flashlight, Shovel, etc.)",
+            label: "sell-blacklisted");
 
-        public static void Initialize(ConfigFile config)
-        {
-            autoSellInventoryConfig = config.Bind(
-                section: "Sell",
-                key: "AutoSellInventory",
-                defaultValue: true,
-                description: "Pressing the drop key once while at the company counter will automatically put all items in the inventory."
-            );
-
-            sellBlacklistConfig = config.Bind(
-                section: "Sell",
-                key: "SellBlacklistedItems",
-                defaultValue: "Walkie-talkie, Flashlight, Shovel, Lockpicker, Pro-flashlight, Stun grenade, Boombox, TZP-Inhalant, Zap gun, Jetpack, Extension Ladder, Radar-booster, Spray paint, Weed killer, Belt bag, Kitchen knife, Shotgun, Ammo, Key, Medic bag, Night Vision Goggles, Cat, Cat Food, IFireAxe, IBaseball bat, Plunger",
-                description: "Comma-separated list of item names that should NOT be automatically (Walkie-talkie, Flashlight, Shovel, etc.)"
-            );
-
-            AutoSellInventory = autoSellInventoryConfig.Value;
-            Logging.Info($"Auto sell inventory: {AutoSellInventory}");
-
-            RefreshSellBlacklist();
-        }
-
-        public static void RefreshSellBlacklist()
-        {
-            sellBlacklistedItems.Clear();
-
-            if (string.IsNullOrWhiteSpace(sellBlacklistConfig.Value))
-                return;
-
-            var items = sellBlacklistConfig.Value.Split(',');
-            foreach (var item in items)
-            {
-                string trimmedItem = item.Trim();
-                if (!string.IsNullOrEmpty(trimmedItem))
-                {
-                    sellBlacklistedItems.Add(trimmedItem);
-                }
-            }
-
-            Logging.Info($"Loaded {sellBlacklistedItems.Count} sell-blacklisted items: {string.Join(", ", sellBlacklistedItems)}");
-        }
-
-        public static bool IsSellBlacklisted(string itemName)
-        {
-            return sellBlacklistedItems.Contains(itemName);
-        }
+        ModLog.Info($"Auto sell inventory: {AutoSellInventory}");
     }
+
+    public static bool IsSellBlacklisted(string itemName) => sellBlacklist.Contains(itemName);
 }

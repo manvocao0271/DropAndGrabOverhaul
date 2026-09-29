@@ -1,47 +1,43 @@
 using BepInEx.Configuration;
-using DropAndGrabOverhaul;
 
-namespace DropAndGrabOverhaul.Configuration
+namespace DropAndGrabOverhaul.Configuration;
+
+internal static class InputConfiguration
 {
-    public static class InputConfiguration
+    private static ConfigEntry<float> doubleTapWindow = null!;
+    private static ConfigEntry<float> forceDropHoldDuration = null!;
+    private static ConfigEntry<float> reservedSlotsHoldDuration = null!;
+
+    // Read live off the entries, so changes made in-game apply immediately.
+    public static float DoubleTapWindow => doubleTapWindow.Value;
+    public static float ForceDropHoldDuration => forceDropHoldDuration.Value;
+    public static float ReservedSlotsHoldDuration => reservedSlotsHoldDuration.Value;
+
+    public static void Initialize(ConfigFile config)
     {
-        private static ConfigEntry<float> doubleTapWindowConfig = null!;
-        private static ConfigEntry<float> forceDropHoldDurationConfig = null!;
-        private static ConfigEntry<float> reservedSlotsHoldDurationConfig = null!;
+        doubleTapWindow = config.Bind(
+            section: "Input",
+            key: "DoubleTapWindow",
+            defaultValue: 0.2f,
+            description: "Time window in seconds to detect double-tap on drop key."
+        );
 
-        public static float DoubleTapWindow { get; private set; }
-        public static float ForceDropHoldDuration { get; private set;}
-        public static float ReservedSlotsHoldDuration { get; private set; }
+        forceDropHoldDuration = config.Bind(
+            section: "Input",
+            key: "ForceDropHoldDuration",
+            defaultValue: 0.5f,
+            description: "Hold drop key for this many seconds to force drop all items, ignoring blacklisted items."
+        );
 
-        public static void Initialize(ConfigFile config)
-        {
-            doubleTapWindowConfig = config.Bind(
-                section: "Input",
-                key: "DoubleTapWindow",
-                defaultValue: 0.2f,
-                description: "Time window in seconds to detect double-tap on drop key."
-            );
+        reservedSlotsHoldDuration = config.Bind(
+            section: "Input",
+            key: "ReservedSlotsHoldDuration",
+            defaultValue: 0.5f,
+            description: "Only applies with ReservedItemSlotCore installed. Once the force drop has started, keep holding the drop key this many extra seconds to also drop the items in reserved item slots."
+        );
 
-            forceDropHoldDurationConfig = config.Bind(
-                section: "Input",
-                key: "ForceDropHoldDuration",
-                defaultValue: 0.5f,
-                description: "Hold drop key for this many seconds to force drop all items, ignoring blacklisted items."
-            );
-
-            reservedSlotsHoldDurationConfig = config.Bind(
-                section: "Input",
-                key: "ReservedSlotsHoldDuration",
-                defaultValue: 0.5f,
-                description: "Only applies with ReservedItemSlotCore installed. Once the force drop has started, keep holding the drop key this many extra seconds to also drop the items in reserved item slots."
-            );
-
-            DoubleTapWindow = doubleTapWindowConfig.Value;
-            ForceDropHoldDuration = forceDropHoldDurationConfig.Value;
-            ReservedSlotsHoldDuration = reservedSlotsHoldDurationConfig.Value;
-            Logging.Info($"Double-tap window set to {DoubleTapWindow}s");
-            Logging.Info($"Force drop hold duration set to {ForceDropHoldDuration}s");
-            Logging.Info($"Reserved slots hold duration set to {ReservedSlotsHoldDuration}s");
-        }
+        ModLog.Info($"Double-tap window set to {DoubleTapWindow}s");
+        ModLog.Info($"Force drop hold duration set to {ForceDropHoldDuration}s");
+        ModLog.Info($"Reserved slots hold duration set to {ReservedSlotsHoldDuration}s");
     }
 }

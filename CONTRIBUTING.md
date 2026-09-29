@@ -1,1 +1,0 @@
-send an email for details to manvocao0271@gmail.com
