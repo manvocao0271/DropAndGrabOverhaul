@@ -5,6 +5,7 @@ using System.Reflection;
 using System.Reflection.Emit;
 using UnityEngine;
 using HarmonyLib;
+using DropAndGrabOverhaul.Compatibility;
 using DropAndGrabOverhaul.Input;
 using DropAndGrabOverhaul.Inventory;
 using DropAndGrabOverhaul.Configuration;
@@ -189,6 +190,11 @@ public partial class Plugin : BaseUnityPlugin
             if (player.currentItemSlot != restoreSlot && player.currentlyHeldObjectServer == null)
             {
                 player.SwitchToItemSlot(restoreSlot);
+            }
+            
+            if (droppedReservedItem)
+            {
+                ReservedItemSlotCompat.RefreshHudAfterReservedDrop();
             }
 
             Plugin.Log.LogInfo($"Dropped {droppedCount} items total");
