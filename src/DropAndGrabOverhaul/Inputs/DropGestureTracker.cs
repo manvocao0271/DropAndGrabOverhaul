@@ -69,6 +69,9 @@ internal sealed class DropGestureTracker
             float held = now - holdStartTime;
             if (held >= timings.ForceDropHold)
             {
+                // The press that began this hold was recorded as a tap; don't let it pair with
+                // a tap after release into a double-tap.
+                lastTapTime = float.NegativeInfinity;
                 return held >= timings.ForceDropHold + timings.ReservedSlotsHold
                     ? DropGesture.ForceDropReserved
                     : DropGesture.ForceDrop;

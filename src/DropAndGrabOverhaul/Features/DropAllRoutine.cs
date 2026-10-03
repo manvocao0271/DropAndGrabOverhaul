@@ -25,6 +25,11 @@ internal static class DropAllRoutine
 
         foreach ((int slot, GrabbableObject item) in items)
         {
+            // Vanilla defers a discard made mid-grab-animation, which would leave the echo wait
+            // below to time out and abort the sequence - let the grab finish first.
+            while (player.isGrabbingObjectAnimation)
+                yield return null;
+
             // The list is a snapshot, but this loop yields between drops - re-confirm the slot
             // still holds this exact item before acting on it.
             if (item == null || slot >= player.ItemSlots.Length || player.ItemSlots[slot] != item)

@@ -94,12 +94,6 @@ internal sealed class UpdateRunner : MonoBehaviour
         if (dropAllGate.IsRunning)
             return;
 
-        if (player.ItemSlots == null || player.ItemSlots.Length == 0)
-        {
-            ModLog.Info("No item slots available");
-            return;
-        }
-
         // The first hold stage and double-tap only touch the main hotbar; reserved slots are
         // left alone until the key has been held longer (includeReservedSlots).
         var items = InventoryAccessor.GetItemSlots(player, includeReservedSlots);
