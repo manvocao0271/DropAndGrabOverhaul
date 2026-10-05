@@ -10,7 +10,7 @@ internal sealed class ItemNameList
 {
     // Default for every list: all of the store-purchasable grabbable items.
     public const string DefaultNames =
-        "Walkie-talkie, Flashlight, Shovel, Lockpicker, Pro-flashlight, Stun grenade, Boombox, TZP-Inhalant, Zap gun, Jetpack, Extension Ladder, Radar-booster, Spray paint, Weed killer, Belt bag, Kitchen knife, Shotgun, Ammo, Key, Medic bag, Night Vision Goggles, Cat, Cat Food, IFireAxe, IBaseball bat, Plunger";
+        "Walkie-talkie, Flashlight, Shovel, Lockpicker, Pro-flashlight, Stun grenade, Boombox, TZP-Inhalant, Zap gun, Jetpack, Extension ladder, Radar-booster, Spray paint, Weed killer, Belt bag, Kitchen knife, Shotgun, Ammo, Key, Medic Bag, Night Vision Goggles, Cat, Cat Food, IFireAxe, IBaseball bat, Plunger, Mega Flashlight, Beacon, Emergency Flare, Pile of Glowsticks";
 
     private readonly ConfigEntry<string> entry;
     private readonly string label;
