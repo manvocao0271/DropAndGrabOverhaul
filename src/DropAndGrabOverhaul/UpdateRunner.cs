@@ -44,6 +44,14 @@ internal sealed class UpdateRunner : MonoBehaviour
         if (player == null)
             return;
 
+        // Mirror vanilla's own guards (typing in chat, menus, animations, ...). Reset rather than
+        // just return so a key held through one of those states can't later count as a gesture.
+        if (!DropGuard.CanAcceptDropInput(player))
+        {
+            InputHandler.ResetDropKeyTracking();
+            return;
+        }
+
         // Looking at the company counter: the drop key sells instead of dropping.
         if (SellConfiguration.AutoSellInventory && IsHoveringDesk(player, out DepositItemsDesk? desk))
         {
@@ -57,7 +65,9 @@ internal sealed class UpdateRunner : MonoBehaviour
         switch (InputHandler.Poll())
         {
             case DropGesture.Tap:
-                DropHeldItem(player);
+                // Vanilla ignores a drop press mid-grab, mid-throw or right after a slot switch.
+                if (DropGuard.CanDropHeldItemNow(player))
+                    DropHeldItem(player);
                 break;
             case DropGesture.DoubleTap:
                 StartDropAll(player, "Double-tap drop detected - dropping all items",

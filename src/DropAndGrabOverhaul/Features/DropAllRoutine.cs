@@ -11,9 +11,10 @@ namespace DropAndGrabOverhaul.Features;
 
 internal static class DropAllRoutine
 {
-    // How long to wait for the network echo that clears currentlyHeldObjectServer after a drop
-    // (CLAUDE.md gotcha #5) before giving up on the rest of the sequence.
-    private const float ThrowEchoTimeoutSeconds = 2f;
+    // How long to wait for the player to become idle (no grab animation, no drop still waiting for
+    // its network echo - CLAUDE.md gotcha #5) before giving up on the rest of the sequence. Both
+    // waits are bounded so a stuck flag can never leave the caller's CoroutineGate busy forever.
+    private const float IdleTimeoutSeconds = 3f;
 
     // Drops every (slot, item) pair in order, then restores the player's original hotbar slot.
     // Concurrency is handled by the caller's CoroutineGate.
@@ -22,13 +23,30 @@ internal static class DropAllRoutine
         int originalSlot = player.currentItemSlot;
         int droppedCount = 0;
         bool droppedReservedItem = false;
+        bool abortedEarly = false;
 
         foreach ((int slot, GrabbableObject item) in items)
         {
-            // Vanilla defers a discard made mid-grab-animation, which would leave the echo wait
-            // below to time out and abort the sequence - let the grab finish first.
-            while (player.isGrabbingObjectAnimation)
+            // Wait *before* acting, not after: the previous drop (this loop's, or the single tap
+            // that opened a double-tap) may still be waiting for its ThrowObjectClientRpc echo, and
+            // switching slots before it lands corrupts currentlyHeldObjectServer. Also lets a
+            // grab animation finish first, since vanilla defers a discard made mid-grab.
+            float waitStart = Time.time;
+            while (IsBusy(player) && !IsPlayerGone(player) && Time.time - waitStart < IdleTimeoutSeconds)
                 yield return null;
+
+            if (IsPlayerGone(player))
+            {
+                ModLog.Info("Player died or lost control - stopping drop-all");
+                yield break;
+            }
+
+            if (IsBusy(player))
+            {
+                ModLog.Warning("Timed out waiting for the previous grab/drop to finish - stopping drop-all early to avoid desyncing the rest.");
+                abortedEarly = true;
+                break;
+            }
 
             // The list is a snapshot, but this loop yields between drops - re-confirm the slot
             // still holds this exact item before acting on it.
@@ -52,15 +70,25 @@ internal static class DropAllRoutine
             }
             droppedCount++;
             ModLog.Info($"Dropped item: {itemName}");
+        }
 
+        // The last drop's echo is still outstanding. Let it land before touching the slot again.
+        if (!abortedEarly)
+        {
             float waitStart = Time.time;
-            while (player.currentlyHeldObjectServer != null && Time.time - waitStart < ThrowEchoTimeoutSeconds)
+            while (IsBusy(player) && !IsPlayerGone(player) && Time.time - waitStart < IdleTimeoutSeconds)
                 yield return null;
 
-            if (player.currentlyHeldObjectServer != null)
+            if (IsPlayerGone(player))
             {
-                ModLog.Warning($"Timed out waiting for '{itemName}' to finish dropping over the network - stopping drop-all early to avoid desyncing the rest.");
-                break;
+                ModLog.Info("Player died or lost control - stopping drop-all");
+                yield break;
+            }
+
+            if (IsBusy(player))
+            {
+                ModLog.Warning("Timed out waiting for the last drop to finish over the network - leaving the selected slot alone.");
+                abortedEarly = true;
             }
         }
 
@@ -74,7 +102,8 @@ internal static class DropAllRoutine
             yield return null;
         }
 
-        RestoreSlot(player, originalSlot);
+        if (!abortedEarly)
+            RestoreSlot(player, originalSlot);
 
         // RIS only refreshes its reserved-slot HUD for the first reserved item dropped in this
         // sequence (see ReservedItemSlotCompat.RefreshHudAfterReservedDrop for why); force one
@@ -85,6 +114,15 @@ internal static class DropAllRoutine
 
         ModLog.Info($"Dropped {droppedCount} items total");
     }
+
+    // A grab animation is playing, or a drop is still waiting for its network echo
+    // (PlayerControllerB.throwingObject is set by DiscardHeldObject and cleared by the owner's
+    // ThrowObjectClientRpc).
+    private static bool IsBusy(PlayerControllerB player)
+        => player.isGrabbingObjectAnimation || player.throwingObject;
+
+    private static bool IsPlayerGone(PlayerControllerB player)
+        => player == null || player.isPlayerDead || !player.isPlayerControlled;
 
     private static void RestoreSlot(PlayerControllerB player, int originalSlot)
     {
@@ -98,7 +136,7 @@ internal static class DropAllRoutine
             restoreSlot = 0;
         }
 
-        if (player.currentItemSlot != restoreSlot && player.currentlyHeldObjectServer == null)
+        if (player.currentItemSlot != restoreSlot && player.currentlyHeldObjectServer == null && !player.throwingObject)
             player.SwitchToItemSlot(restoreSlot);
     }
 }
