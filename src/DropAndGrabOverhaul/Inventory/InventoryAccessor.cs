@@ -4,23 +4,13 @@ using GameNetcodeStuff;
 
 namespace DropAndGrabOverhaul.Inventory;
 
-// Single place that knows how to enumerate a player's current inventory slots.
-// Everything that needs to walk "the player's current items" (drop-all, auto-sell)
-// should route through here instead of indexing player.ItemSlots directly, so a
-// future HotbarPlus/ReservedItemSlot integration only has to change this one class -
-// see README's Compatibility section.
+// The one place that enumerates a player's inventory; drop-all and auto-sell go through here
+// instead of indexing player.ItemSlots, so inventory-mod integrations only touch this class.
 internal static class InventoryAccessor
 {
-    /// <summary>
-    /// Returns every non-null (slot index, item) pair currently held by
-    /// <paramref name="player"/>, in slot order. Recomputed fresh on each call -
-    /// callers that need a stable view across multiple frames should hold on to
-    /// the returned list themselves rather than calling this again mid-sequence.
-    /// </summary>
-    /// <param name="includeReservedSlots">
-    /// When false, ReservedItemSlotCore's reserved slots are left out, leaving only the main
-    /// hotbar. Without that mod installed the flag makes no difference.
-    /// </param>
+    // Every non-null (slot, item) pair in slot order, recomputed on each call; hold on to the
+    // list for a multi-frame sequence. With includeReservedSlots false, ReservedItemSlotCore's
+    // reserved slots are left out.
     public static List<(int Slot, GrabbableObject Item)> GetItemSlots(PlayerControllerB? player, bool includeReservedSlots = true)
     {
         var result = new List<(int, GrabbableObject)>();
@@ -43,10 +33,7 @@ internal static class InventoryAccessor
         return result;
     }
 
-    /// <summary>
-    /// True if <paramref name="slot"/> is a ReservedItemSlotCore reserved slot for
-    /// <paramref name="player"/>. Always false when that mod isn't installed.
-    /// </summary>
+    // Always false when ReservedItemSlotCore isn't installed.
     public static bool IsReservedSlot(PlayerControllerB? player, int slot)
         => ReservedItemSlotCompat.IsReservedSlot(player, slot);
 }

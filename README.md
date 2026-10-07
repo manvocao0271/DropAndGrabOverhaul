@@ -124,16 +124,10 @@ DropAndGrabOverhaul/
 │       ├── Compatibility/
 │       │   └── ReservedItemSlotCompat.cs
 │       ├── Configuration/
-│       │   ├── GrabConfiguration.cs
-│       │   ├── InputConfiguration.cs
-│       │   ├── ItemBlacklist.cs
 │       │   ├── ItemNameList.cs
-│       │   ├── LoggingConfiguration.cs
-│       │   └── SellConfiguration.cs
+│       │   └── Settings.cs
 │       ├── Features/
-│       │   ├── AutoSellRoutine.cs
-│       │   ├── CoroutineGate.cs
-│       │   └── DropAllRoutine.cs
+│       │   └── Routines.cs
 │       ├── Inputs/
 │       │   ├── DropGestureTracker.cs
 │       │   ├── DropGuard.cs
@@ -141,10 +135,7 @@ DropAndGrabOverhaul/
 │       ├── Inventory/
 │       │   └── InventoryAccessor.cs
 │       ├── Patches/
-│       │   ├── DiscardPerformedPatch.cs
-│       │   ├── GrabCooldownPatch.cs
-│       │   ├── GrabObjectDelayPatch.cs
-│       │   └── StartOfRoundPatch.cs
+│       │   └── Patches.cs
 │       ├── DropAndGrabOverhaul.csproj
 │       ├── ModLog.cs
 │       ├── Plugin.cs

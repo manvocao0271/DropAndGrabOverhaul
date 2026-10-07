@@ -8,37 +8,95 @@ using UnityEngine;
 
 namespace DropAndGrabOverhaul.Features;
 
+// Allows at most one instance of a routine at a time. The flag is set before the coroutine starts
+// and cleared in a finally, never derived from the Coroutine handle: a routine that finishes
+// without yielding completes inside StartCoroutine and would leave a handle-based gate stuck
+// "busy" (CLAUDE.md gotcha #6).
+internal sealed class CoroutineGate
+{
+    private bool running;
+
+    public bool IsRunning => running;
+
+    public void Start(MonoBehaviour host, IEnumerator routine)
+    {
+        if (running || !host.isActiveAndEnabled)
+            return;
+
+        running = true;
+        try
+        {
+            host.StartCoroutine(Run(routine));
+        }
+        catch
+        {
+            running = false;
+            throw;
+        }
+    }
+
+    private IEnumerator Run(IEnumerator routine)
+    {
+        try
+        {
+            while (routine.MoveNext())
+                yield return routine.Current;
+        }
+        finally
+        {
+            running = false;
+        }
+    }
+}
+
+internal static class AutoSellRoutine
+{
+    private const float DelayBetweenSalesSeconds = 0.2f;
+
+    // Places every eligible scrap item on the counter, one at a time. Main hotbar only:
+    // reserved slots are never sold.
+    public static IEnumerator Run(PlayerControllerB player, DepositItemsDesk desk)
+    {
+        foreach ((int slot, GrabbableObject item) in InventoryAccessor.GetItemSlots(player, includeReservedSlots: false))
+        {
+            // The list is a snapshot but this loop yields: re-check the slot still holds this item.
+            if (item == null || slot >= player.ItemSlots.Length || player.ItemSlots[slot] != item || !item.itemProperties.isScrap)
+                continue;
+
+            if (SellConfiguration.IsSellBlacklisted(item.itemProperties.itemName))
+                continue;
+
+            player.SwitchToItemSlot(slot);
+            desk.PlaceItemOnCounter(player);
+
+            yield return new WaitForSeconds(DelayBetweenSalesSeconds);
+        }
+    }
+}
+
 internal static class DropAllRoutine
 {
-    // How long to wait for the player to become idle (no grab animation, no drop still waiting for
-    // its network echo - CLAUDE.md gotcha #5) before giving up on the rest of the sequence. Both
-    // waits are bounded so a stuck flag can never leave the caller's CoroutineGate busy forever.
+    // Both idle waits are bounded so a stuck flag can never leave the CoroutineGate busy forever.
     private const float IdleTimeoutSeconds = 3f;
 
-    // Drops every (slot, item) pair in order, then restores the player's original hotbar slot.
-    // Concurrency is handled by the caller's CoroutineGate.
+    // Drops every (slot, item) pair in order, then restores the original hotbar slot.
     public static IEnumerator Run(PlayerControllerB player, List<(int Slot, GrabbableObject Item)> items, bool ignoreBlacklist)
     {
         int originalSlot = player.currentItemSlot;
-        int droppedCount = 0;
         bool droppedReservedItem = false;
         bool abortedEarly = false;
 
         foreach ((int slot, GrabbableObject item) in items)
         {
-            // Wait *before* acting, not after: the previous drop (this loop's, or the single tap
-            // that opened a double-tap) may still be waiting for its ThrowObjectClientRpc echo, and
-            // switching slots before it lands corrupts currentlyHeldObjectServer. Also lets a
-            // grab animation finish first, since vanilla defers a discard made mid-grab.
+            // Wait *before* acting: the previous drop may still be waiting for its
+            // ThrowObjectClientRpc echo, and switching slots first corrupts
+            // currentlyHeldObjectServer (CLAUDE.md gotcha #5).
             float waitStart = Time.time;
             while (IsBusy(player) && !IsPlayerGone(player) && Time.time - waitStart < IdleTimeoutSeconds)
                 yield return null;
 
             if (IsPlayerGone(player))
-            {
-                ModLog.Info("Player died or lost control - stopping drop-all");
                 yield break;
-            }
 
             if (IsBusy(player))
             {
@@ -47,28 +105,20 @@ internal static class DropAllRoutine
                 break;
             }
 
-            // The list is a snapshot, but this loop yields between drops - re-confirm the slot
-            // still holds this exact item before acting on it.
+            // The list is a snapshot but this loop yields: re-check the slot still holds this item.
             if (item == null || slot >= player.ItemSlots.Length || player.ItemSlots[slot] != item)
                 continue;
 
-            string itemName = item.itemProperties.itemName;
-
-            if (!ignoreBlacklist && ItemBlacklist.IsBlacklisted(itemName))
-            {
-                ModLog.Info($"Skipping blacklisted item: {itemName}");
+            if (!ignoreBlacklist && ItemBlacklist.IsBlacklisted(item.itemProperties.itemName))
                 continue;
-            }
 
             droppedReservedItem |= InventoryAccessor.IsReservedSlot(player, slot);
 
             player.SwitchToItemSlot(slot);
             player.DiscardHeldObject();
-            droppedCount++;
-            ModLog.Info($"Dropped item: {itemName}");
         }
 
-        // The last drop's echo is still outstanding. Let it land before touching the slot again.
+        // The last drop's echo is still outstanding; let it land before touching the slot again.
         if (!abortedEarly)
         {
             float waitStart = Time.time;
@@ -76,10 +126,7 @@ internal static class DropAllRoutine
                 yield return null;
 
             if (IsPlayerGone(player))
-            {
-                ModLog.Info("Player died or lost control - stopping drop-all");
                 yield break;
-            }
 
             if (IsBusy(player))
             {
@@ -88,10 +135,8 @@ internal static class DropAllRoutine
             }
         }
 
-        // ReservedItemSlotCore reacts to a dropped reserved item by scheduling a switch to the
-        // next reserved slot (or back to the hotbar). Those switches only run once the player's
-        // hands are empty again - i.e. right after the last drop above - and would move the
-        // player off the slot restored below. Let them run first.
+        // ReservedItemSlotCore schedules its own slot switch after a reserved drop; let it run
+        // first so it can't override the restore below (CLAUDE.md gotcha #10).
         if (droppedReservedItem)
         {
             yield return new WaitForEndOfFrame();
@@ -101,19 +146,12 @@ internal static class DropAllRoutine
         if (!abortedEarly)
             RestoreSlot(player, originalSlot);
 
-        // RIS only refreshes its reserved-slot HUD for the first reserved item dropped in this
-        // sequence (see ReservedItemSlotCompat.RefreshHudAfterReservedDrop for why); force one
-        // more refresh now that every drop and the slot restore are done, so slots this loop
-        // emptied after the first don't keep showing a stale frame.
+        // RIS only refreshes its reserved-slot HUD for the first reserved drop of a sequence.
         if (droppedReservedItem)
             ReservedItemSlotCompat.RefreshHudAfterReservedDrop();
-
-        ModLog.Info($"Dropped {droppedCount} items total");
     }
 
-    // A grab animation is playing, or a drop is still waiting for its network echo
-    // (PlayerControllerB.throwingObject is set by DiscardHeldObject and cleared by the owner's
-    // ThrowObjectClientRpc).
+    // A grab animation is playing, or a drop is still waiting for its network echo.
     private static bool IsBusy(PlayerControllerB player)
         => player.isGrabbingObjectAnimation || player.throwingObject;
 
@@ -124,7 +162,7 @@ internal static class DropAllRoutine
     {
         int restoreSlot = originalSlot;
 
-        // Don't go back to a reserved slot that this drop just emptied; use the first hotbar slot.
+        // Don't go back to a reserved slot this drop just emptied; use the first hotbar slot.
         if (restoreSlot >= 0 && restoreSlot < player.ItemSlots.Length
             && InventoryAccessor.IsReservedSlot(player, restoreSlot)
             && player.ItemSlots[restoreSlot] == null)

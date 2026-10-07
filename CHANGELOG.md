@@ -1,8 +1,5 @@
 # Changelog
 
-All notable changes to this project are documented in this file.
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
-
 ## [0.2.9] - 2026-10-06
 - fixed the drop key acting while typing in chat, in menus or the terminal, or in other states vanilla ignores it
 - fixed double-tap drop-all desyncing the first item when the tap's drop was still syncing over the network

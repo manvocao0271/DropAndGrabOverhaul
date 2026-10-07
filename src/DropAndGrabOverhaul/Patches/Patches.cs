@@ -2,22 +2,59 @@ using System.Collections.Generic;
 using System.Reflection;
 using System.Reflection.Emit;
 using DropAndGrabOverhaul.Configuration;
+using DropAndGrabOverhaul.Inputs;
 using GameNetcodeStuff;
 using HarmonyLib;
 
 namespace DropAndGrabOverhaul.Patches;
 
-// Shortens the two fixed waits inside PlayerControllerB.GrabObject()'s coroutine, which are what
-// actually gate grab spam (CLAUDE.md gotcha #3). Vanilla:
-//
-//   yield return new WaitForSeconds(0.1f);
-//   ...
-//   yield return new WaitForSeconds(grabObjectAnimationTime - 0.2f);
-//
-// The transpiler finds those two constants and subtracts a configured amount from each.
-//
-// Deliberately public: the IL emitted below calls GetCooldownDecrease from inside the game's
-// own assembly, so both the class and the method are kept public.
+// One class per patch, each with its own class-level [HarmonyPatch], or PatchAll silently skips it
+// (CLAUDE.md gotcha #1).
+
+// UpdateRunner can't be created from Plugin.Awake(): an early scene transition destroys it
+// (gotcha #2). StartOfRound.Awake runs after that settles.
+[HarmonyPatch(typeof(StartOfRound), "Awake")]
+internal static class StartOfRoundPatch
+{
+    [HarmonyPostfix]
+    private static void Postfix() => UpdateRunner.EnsureCreated();
+}
+
+// Replaces vanilla's drop-key handler so UpdateRunner owns drop behaviour; what vanilla did in
+// there besides dropping is covered in CLAUDE.md gotcha #4. Vanilla runs untouched when the
+// mod can't take over: no runner, no Discard action, or controller + ship build mode.
+[HarmonyPatch(typeof(PlayerControllerB), "Discard_performed")]
+internal static class DiscardPerformedPatch
+{
+    [HarmonyPrefix]
+    private static bool Prefix()
+    {
+        if (!UpdateRunner.IsActive || !InputHandler.IsDropActionAvailable)
+            return true;
+
+        // Same condition DropGuard disables the mod's own input under, so exactly one handles each press.
+        if (DropGuard.IsControllerBuildModeStore())
+            return true;
+
+        return false;
+    }
+}
+
+// Overrides the interact cooldown on grabbable items with the configured GrabDelay.
+[HarmonyPatch(typeof(InteractTrigger), "Interact")]
+internal static class GrabCooldownPatch
+{
+    [HarmonyPrefix]
+    private static void Prefix(InteractTrigger __instance)
+    {
+        if (__instance.GetComponentInParent<GrabbableObject>() != null)
+            __instance.cooldownTime = GrabConfiguration.GrabDelay;
+    }
+}
+
+// Shortens the two fixed waits in PlayerControllerB.GrabObject()'s coroutine, which are what gate
+// grab spam (gotcha #3). Vanilla: WaitForSeconds(0.1f) and WaitForSeconds(grabObjectAnimationTime - 0.2f).
+// Must stay public: the emitted IL calls GetCooldownDecrease from the game's own assembly.
 [HarmonyPatch(typeof(PlayerControllerB), "GrabObject", MethodType.Enumerator)]
 public static class GrabObjectDelayPatch
 {
@@ -25,8 +62,7 @@ public static class GrabObjectDelayPatch
     private const float AnimationOffsetSeconds = 0.2f;
     private const int ExpectedPatchCount = 2;
 
-    // How much shorter than vanilla's 0.2s the configured delay is. Read live on every grab, so
-    // a GrabDelay change made in-game applies immediately.
+    // How much shorter than vanilla's 0.2s the configured delay is; read live on every grab.
     public static float GetCooldownDecrease() => AnimationOffsetSeconds - GrabConfiguration.GrabDelay;
 
     [HarmonyTranspiler]
@@ -59,18 +95,15 @@ public static class GrabObjectDelayPatch
             }
             else if (value == AnimationOffsetSeconds && next == OpCodes.Sub)
             {
-                // Stack is [animationTime, 0.2f]. Sub collapses it to (animationTime - 0.2f), then
-                // we push the decrease and let vanilla's own following Sub subtract it too:
-                // new WaitForSeconds(animationTime - 0.2f)  ->  ... (animationTime - 0.2f) - decrease
+                // Stack is [animationTime, 0.2f]: Sub collapses it to (animationTime - 0.2f), then
+                // vanilla's own following Sub subtracts the decrease we push.
                 patched.Add(new CodeInstruction(OpCodes.Sub));
                 patched.Add(new CodeInstruction(OpCodes.Call, getDecrease));
                 patchedCount++;
             }
         }
 
-        if (patchedCount == ExpectedPatchCount)
-            ModLog.Info($"GrabObjectDelayPatch patched {patchedCount} delay checkpoint(s)");
-        else
+        if (patchedCount != ExpectedPatchCount)
             ModLog.Warning($"GrabObjectDelayPatch patched {patchedCount} delay checkpoint(s), expected {ExpectedPatchCount} - the game's GrabObject() IL probably changed, so the grab delay may not apply.");
 
         return patched;

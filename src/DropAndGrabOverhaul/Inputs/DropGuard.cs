@@ -2,25 +2,16 @@ using GameNetcodeStuff;
 
 namespace DropAndGrabOverhaul.Inputs;
 
-// Mirrors the checks vanilla's PlayerControllerB.Discard_performed makes before it lets the drop
-// key do anything. The mod polls the Discard action itself (see InputHandler) instead of going
-// through that handler, so without these the drop key would also fire while typing in chat, in the
-// pause menu or terminal, mid-animation, and so on. Written from the decompiled Discard_performed;
-// if a game update changes that method, this is the place to re-sync.
+// Mirrors the checks vanilla's PlayerControllerB.Discard_performed makes before the drop key does
+// anything. The mod polls the Discard action itself, so without these the key would also fire
+// while typing in chat, in menus, mid-animation, etc. Written from the decompiled
+// Discard_performed; re-sync it if a game update changes that method (CLAUDE.md gotcha #11).
 internal static class DropGuard
 {
-    // Same threshold vanilla uses for "just switched slots".
     private const float SlotSwitchCooldownSeconds = 0.2f;
-
-    // The jetpack's item id, which vanilla special-cases in Discard_performed.
     private const int JetpackItemId = 13;
 
-    /// <summary>
-    /// True if the local player is in a state where the drop key may do anything at all (any
-    /// gesture: tap, double-tap, force drop, desk auto-sell). False while typing in chat, in a
-    /// menu or the terminal, in a special interaction, using an item, dead, or when this isn't the
-    /// locally controlled player.
-    /// </summary>
+    // The drop key may do anything at all: tap, double-tap, force drop, desk auto-sell.
     public static bool CanAcceptDropInput(PlayerControllerB player)
     {
         if (!player.IsOwner || !player.isPlayerControlled || (player.IsServer && !player.isHostPlayerObject))
@@ -43,10 +34,7 @@ internal static class DropGuard
         return !usingJetpackControls;
     }
 
-    /// <summary>
-    /// True while the drop key means "store the object being placed" - a controller player in
-    /// ship build mode. Vanilla handles that itself, so the mod stays out of the way.
-    /// </summary>
+    // The drop key means "store the object being placed": a controller player in ship build mode.
     public static bool IsControllerBuildModeStore()
     {
         StartOfRound? round = StartOfRound.Instance;
@@ -54,21 +42,13 @@ internal static class DropGuard
         return round != null && buildMode != null && round.localPlayerUsingController && buildMode.InBuildMode;
     }
 
-    /// <summary>
-    /// True if a drop-key press may cancel ship build mode right now. Vanilla's handler only gets
-    /// as far as CancelBuildMode once its grab-animation and slot-switch-cooldown checks pass, so a
-    /// press mid-grab or just after a slot switch must leave build mode alone. (Its remaining
-    /// checks - chat, special interaction, item use, jetpack - are already covered by
-    /// <see cref="CanAcceptDropInput"/>.) Deliberately not gated on throwingObject or
-    /// isHoldingObject: vanilla cancels build mode before it looks at those.
-    /// </summary>
+    // Vanilla cancels ship build mode only once its grab-animation and slot-switch-cooldown checks
+    // pass (the rest are in CanAcceptDropInput). Deliberately not gated on throwingObject or
+    // isHoldingObject: vanilla cancels before it looks at those.
     public static bool CanCancelBuildMode(PlayerControllerB player)
         => !player.isGrabbingObjectAnimation && player.timeSinceSwitchingSlots >= SlotSwitchCooldownSeconds;
 
-    /// <summary>
-    /// True if a single tap may drop the currently held item right now - the held-item half of
-    /// vanilla's checks. Not applied to drop-all, which waits these states out itself.
-    /// </summary>
+    // The held-item half of vanilla's checks. Applies to a single tap only; drop-all waits these out itself.
     public static bool CanDropHeldItemNow(PlayerControllerB player)
     {
         return player.isHoldingObject

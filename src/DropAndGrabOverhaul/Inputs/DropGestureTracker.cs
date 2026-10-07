@@ -1,21 +1,12 @@
 namespace DropAndGrabOverhaul.Inputs;
 
-// What the drop key is currently doing, as decided by DropGestureTracker.
 internal enum DropGesture
 {
     None,
-
-    // First press of the key: drop the held item.
-    Tap,
-
-    // Second press within the double-tap window: drop the rest of the eligible items.
-    DoubleTap,
-
-    // Held for ForceDropHold: drop the main hotbar, ignoring the blacklist. Level-triggered.
-    ForceDrop,
-
-    // Held for ForceDropHold + ReservedSlotsHold: also drop reserved slots. Level-triggered.
-    ForceDropReserved,
+    Tap,                // first press: drop the held item
+    DoubleTap,          // second press within the window: drop the rest of the eligible items
+    ForceDrop,          // held for ForceDropHold: main hotbar, ignoring the blacklist (level-triggered)
+    ForceDropReserved,  // held for ForceDropHold + ReservedSlotsHold: also reserved slots (level-triggered)
 }
 
 internal readonly struct DropTimings
@@ -32,20 +23,17 @@ internal readonly struct DropTimings
     public float ReservedSlotsHold { get; }
 }
 
-// Turns raw key state into a DropGesture. Owns all the timing state (last tap, hold start) and has
-// no Unity dependencies - time and key state are passed in - so the logic can be unit-tested.
-//
-// Call Update exactly once per frame. Unlike the separate per-gesture queries this replaced, there
-// is no ordering requirement between calls: one call yields one answer.
+// Turns raw key state into a DropGesture. No Unity dependencies (time and key state are passed
+// in), so it is unit-testable. Call Update exactly once per frame.
 internal sealed class DropGestureTracker
 {
     private float lastTapTime = float.NegativeInfinity;
     private bool holding;
     private float holdStartTime;
 
-    // Set by Reset while the key is still physically down. Blocks any gesture until it has been
-    // genuinely released, so a hold that carries on past whatever consumed the press (desk
-    // auto-sell) can't accumulate into an unintended force drop.
+    // Set by Reset while the key is still down: blocks any gesture until it is genuinely
+    // released, so a hold that outlives whatever consumed the press (desk auto-sell) can't
+    // accumulate into an unintended force drop.
     private bool suppressUntilReleased;
 
     public DropGesture Update(float now, bool pressedThisFrame, bool isDown, in DropTimings timings)
@@ -95,8 +83,7 @@ internal sealed class DropGestureTracker
         return DropGesture.Tap;
     }
 
-    // Forgets any in-progress tap or hold. Used when something else (desk auto-sell) consumed the
-    // key, so timestamps from before that don't leak into the next gesture.
+    // Forgets any in-progress tap or hold, for when something else (desk auto-sell) consumed the key.
     public void Reset(bool keyIsDown)
     {
         holding = false;
