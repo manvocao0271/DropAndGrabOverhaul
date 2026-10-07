@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using DropAndGrabOverhaul.Compatibility;
 using DropAndGrabOverhaul.Configuration;
 using DropAndGrabOverhaul.Inventory;
-using DropAndGrabOverhaul.Patches;
 using GameNetcodeStuff;
 using UnityEngine;
 
@@ -64,10 +63,7 @@ internal static class DropAllRoutine
             droppedReservedItem |= InventoryAccessor.IsReservedSlot(player, slot);
 
             player.SwitchToItemSlot(slot);
-            using (VanillaDiscard.Allow())
-            {
-                player.DiscardHeldObject();
-            }
+            player.DiscardHeldObject();
             droppedCount++;
             ModLog.Info($"Dropped item: {itemName}");
         }

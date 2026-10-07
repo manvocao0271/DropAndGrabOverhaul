@@ -32,11 +32,26 @@ internal static class DropGuard
         if (player.quickMenuManager != null && player.quickMenuManager.isMenuOpen)
             return false;
 
+        // Vanilla's handler (left running by DiscardPerformedPatch) owns the key in this state.
+        if (IsControllerBuildModeStore())
+            return false;
+
         GrabbableObject? held = player.currentlyHeldObjectServer;
         bool usingJetpackControls = (player.jetpackControls || player.disablingJetpackControls)
             && held != null && held.itemProperties.itemId == JetpackItemId;
 
         return !usingJetpackControls;
+    }
+
+    /// <summary>
+    /// True while the drop key means "store the object being placed" - a controller player in
+    /// ship build mode. Vanilla handles that itself, so the mod stays out of the way.
+    /// </summary>
+    public static bool IsControllerBuildModeStore()
+    {
+        StartOfRound? round = StartOfRound.Instance;
+        ShipBuildModeManager? buildMode = ShipBuildModeManager.Instance;
+        return round != null && buildMode != null && round.localPlayerUsingController && buildMode.InBuildMode;
     }
 
     /// <summary>

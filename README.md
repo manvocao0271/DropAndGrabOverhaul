@@ -126,11 +126,12 @@ DropAndGrabOverhaul/
 │       │   └── DropAllRoutine.cs
 │       ├── Inputs/
 │       │   ├── DropGestureTracker.cs
+│       │   ├── DropGuard.cs
 │       │   └── InputHandler.cs
 │       ├── Inventory/
 │       │   └── InventoryAccessor.cs
 │       ├── Patches/
-│       │   ├── DiscardHeldObjectPatch.cs
+│       │   ├── DiscardPerformedPatch.cs
 │       │   ├── GrabCooldownPatch.cs
 │       │   ├── GrabObjectDelayPatch.cs
 │       │   └── StartOfRoundPatch.cs

@@ -42,6 +42,10 @@ internal static class InputHandler
         return dropAction;
     }
 
+    // False if the Discard action can't be found. DiscardPerformedPatch checks this so vanilla's
+    // own drop key keeps working when the mod can't read the key.
+    public static bool IsDropActionAvailable => GetDropAction() != null;
+
     // True only on the frame the drop key went down.
     public static bool WasDropKeyPressedThisFrame() => GetDropAction()?.WasPressedThisFrame() ?? false;
 

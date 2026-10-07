@@ -3,9 +3,9 @@ using DropAndGrabOverhaul.Configuration;
 using DropAndGrabOverhaul.Features;
 using DropAndGrabOverhaul.Inputs;
 using DropAndGrabOverhaul.Inventory;
-using DropAndGrabOverhaul.Patches;
 using GameNetcodeStuff;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace DropAndGrabOverhaul;
 
@@ -13,18 +13,21 @@ namespace DropAndGrabOverhaul;
 // auto-sell. Created lazily by Patches/StartOfRoundPatch (see CLAUDE.md gotcha #2).
 internal sealed class UpdateRunner : MonoBehaviour
 {
-    // How often to re-search for the company desk while it isn't found (it only exists on the
-    // company moon, so on every other moon a search would always come up empty).
-    private const float DeskSearchIntervalSeconds = 1f;
-
     private static UpdateRunner? instance;
+
+    // True while the runner exists; DiscardPerformedPatch hands the drop key back to vanilla when
+    // it doesn't (CLAUDE.md gotcha #2 - the runner can be lost to an early scene transition).
+    internal static bool IsActive => instance != null;
 
     // One gate per routine, owned by this instance so they can never outlive it.
     private readonly CoroutineGate dropAllGate = new();
     private readonly CoroutineGate autoSellGate = new();
 
+    // The company desk only exists on the company moon. It is searched for at most once per scene
+    // change (the flag is cleared by the scene events below), so every other moon costs one
+    // failed FindObjectOfType per scene instead of one per second.
     private DepositItemsDesk? cachedDesk;
-    private float nextDeskSearchTime;
+    private bool deskSearched;
 
     internal static void EnsureCreated()
     {
@@ -36,6 +39,28 @@ internal sealed class UpdateRunner : MonoBehaviour
         instance = runnerObject.AddComponent<UpdateRunner>();
 
         ModLog.Info("UpdateRunner created via StartOfRound.Awake postfix");
+    }
+
+    private void OnEnable()
+    {
+        SceneManager.sceneLoaded += OnSceneLoaded;
+        SceneManager.sceneUnloaded += OnSceneUnloaded;
+    }
+
+    private void OnDisable()
+    {
+        SceneManager.sceneLoaded -= OnSceneLoaded;
+        SceneManager.sceneUnloaded -= OnSceneUnloaded;
+    }
+
+    private void OnSceneLoaded(Scene scene, LoadSceneMode mode) => ForgetDesk();
+
+    private void OnSceneUnloaded(Scene scene) => ForgetDesk();
+
+    private void ForgetDesk()
+    {
+        cachedDesk = null;
+        deskSearched = false;
     }
 
     private void Update()
@@ -51,6 +76,10 @@ internal sealed class UpdateRunner : MonoBehaviour
             InputHandler.ResetDropKeyTracking();
             return;
         }
+
+        // Vanilla's handler cancelled ship build mode on every accepted press; it no longer runs.
+        if (InputHandler.WasDropKeyPressedThisFrame() && ShipBuildModeManager.Instance != null)
+            ShipBuildModeManager.Instance.CancelBuildMode();
 
         // Looking at the company counter: the drop key sells instead of dropping.
         if (SellConfiguration.AutoSellInventory && IsHoveringDesk(player, out DepositItemsDesk? desk))
@@ -85,16 +114,24 @@ internal sealed class UpdateRunner : MonoBehaviour
         }
     }
 
-    private static void DropHeldItem(PlayerControllerB player)
+    private void DropHeldItem(PlayerControllerB player)
     {
-        if (player.currentlyHeldObjectServer == null)
+        GrabbableObject? held = player.currentlyHeldObjectServer;
+        if (held == null)
             return;
 
-        ModLog.Info("Single tap detected - dropping held item immediately");
-        using (VanillaDiscard.Allow())
+        // Vanilla put an item that is already over the counter on the counter instead of dropping
+        // it. That part of its handler no longer runs, so do it here.
+        DepositItemsDesk? desk = GetDesk();
+        if (desk != null && desk.triggerCollider != null && desk.triggerCollider.bounds.Contains(held.transform.position))
         {
-            player.DiscardHeldObject();
+            ModLog.Info("Single tap detected over the company counter - placing held item on it");
+            desk.PlaceItemOnCounter(player);
+            return;
         }
+
+        ModLog.Info("Single tap detected - dropping held item immediately");
+        player.DiscardHeldObject();
     }
 
     private void StartDropAll(PlayerControllerB player, string logMessage, bool includeReservedSlots, bool ignoreBlacklist, bool logIfNothingToDrop)
@@ -118,6 +155,19 @@ internal sealed class UpdateRunner : MonoBehaviour
         dropAllGate.Start(this, DropAllRoutine.Run(player, items, ignoreBlacklist));
     }
 
+    // The company desk, or null when this scene has none. Searched for once per scene change.
+    private DepositItemsDesk? GetDesk()
+    {
+        if (!deskSearched)
+        {
+            deskSearched = true;
+            cachedDesk = FindObjectOfType<DepositItemsDesk>();
+            ModLog.Info(cachedDesk != null ? "Company desk found" : "No company desk in this scene");
+        }
+
+        return cachedDesk;
+    }
+
     // True while the player is looking at the company desk's counter trigger.
     private bool IsHoveringDesk(PlayerControllerB player, [NotNullWhen(true)] out DepositItemsDesk? desk)
     {
@@ -127,19 +177,14 @@ internal sealed class UpdateRunner : MonoBehaviour
         if (player.hoveringOverTrigger == null)
             return false;
 
-        if (cachedDesk == null && Time.time >= nextDeskSearchTime)
-        {
-            cachedDesk = FindObjectOfType<DepositItemsDesk>();
-            nextDeskSearchTime = Time.time + DeskSearchIntervalSeconds;
-        }
-
-        if (cachedDesk == null || cachedDesk.triggerScript == null)
+        DepositItemsDesk? found = GetDesk();
+        if (found == null || found.triggerScript == null)
             return false;
 
-        if (player.hoveringOverTrigger != cachedDesk.triggerScript)
+        if (player.hoveringOverTrigger != found.triggerScript)
             return false;
 
-        desk = cachedDesk;
+        desk = found;
         return true;
     }
 }

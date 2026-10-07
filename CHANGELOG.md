@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - fixed the drop key acting while typing in chat, in menus or the terminal, or in other states vanilla ignores it
 - fixed double-tap drop-all desyncing the first item when the tap's drop was still syncing over the network
 - fixed drop-all permanently stopping if a grab animation never finished (e.g. dying mid-grab)
+- the mod now replaces vanilla's drop-key handler instead of suppressing any drop on a key-press frame
+- vanilla's drop key is left alone if the mod can't read the key or isn't running
+- tapping the drop key while a held item is over the company counter places it on the counter (as vanilla does), even with auto-sell off
+- the company desk is now looked up once per scene instead of about once per second on every moon
 
 ## [0.2.8] - 2026-10-03
 - fixed drop-all aborting early when a grab animation was still playing

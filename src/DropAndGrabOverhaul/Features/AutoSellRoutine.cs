@@ -1,7 +1,6 @@
 using System.Collections;
 using DropAndGrabOverhaul.Configuration;
 using DropAndGrabOverhaul.Inventory;
-using DropAndGrabOverhaul.Patches;
 using GameNetcodeStuff;
 using UnityEngine;
 
@@ -34,10 +33,7 @@ internal static class AutoSellRoutine
             }
 
             player.SwitchToItemSlot(slot);
-            using (VanillaDiscard.Allow())
-            {
-                desk.PlaceItemOnCounter(player);
-            }
+            desk.PlaceItemOnCounter(player);
             soldCount++;
             ModLog.Info($"Sold item: {itemName}");
 
