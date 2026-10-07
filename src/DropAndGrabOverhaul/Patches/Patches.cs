@@ -22,7 +22,8 @@ internal static class StartOfRoundPatch
 
 // Replaces vanilla's drop-key handler so UpdateRunner owns drop behaviour; what vanilla did in
 // there besides dropping is covered in CLAUDE.md gotcha #4. Vanilla runs untouched when the
-// mod can't take over: no runner, no Discard action, or controller + ship build mode.
+// mod can't take over: no runner (or one that faulted), no Discard action, or controller +
+// ship build mode.
 [HarmonyPatch(typeof(PlayerControllerB), "Discard_performed")]
 internal static class DiscardPerformedPatch
 {
@@ -103,8 +104,13 @@ public static class GrabObjectDelayPatch
             }
         }
 
+        // Anything but an exact match means the game's IL changed: leave it untouched rather than
+        // risk shortening the wrong waits.
         if (patchedCount != ExpectedPatchCount)
-            ModLog.Warning($"GrabObjectDelayPatch patched {patchedCount} delay checkpoint(s), expected {ExpectedPatchCount} - the game's GrabObject() IL probably changed, so the grab delay may not apply.");
+        {
+            ModLog.Warning($"GrabObjectDelayPatch matched {patchedCount} delay checkpoint(s), expected {ExpectedPatchCount} - the game's GrabObject() IL probably changed, so it was left unpatched and the vanilla grab delay applies.");
+            return original;
+        }
 
         return patched;
     }

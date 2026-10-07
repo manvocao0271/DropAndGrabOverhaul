@@ -1,3 +1,4 @@
+using System;
 using System.Diagnostics.CodeAnalysis;
 using DropAndGrabOverhaul.Configuration;
 using DropAndGrabOverhaul.Features;
@@ -9,23 +10,25 @@ using UnityEngine.SceneManagement;
 
 namespace DropAndGrabOverhaul;
 
-// The mod's per-frame loop: turns drop-key input into single drops, drop-all sequences and desk
-// auto-sell. Created lazily by Patches/StartOfRoundPatch (see CLAUDE.md gotcha #2).
+// The per-frame loop: turns drop-key input into single drops, drop-all sequences and desk
+// auto-sell. Created lazily by StartOfRoundPatch (CLAUDE.md gotcha #2).
 internal sealed class UpdateRunner : MonoBehaviour
 {
     private static UpdateRunner? instance;
 
-    // True while the runner exists; DiscardPerformedPatch hands the drop key back to vanilla when
-    // it doesn't (CLAUDE.md gotcha #2 - the runner can be lost to an early scene transition).
-    internal static bool IsActive => instance != null;
+    // DiscardPerformedPatch hands the drop key back to vanilla while this is false, including
+    // after repeated failures in Update (see below), so a bug here can't leave the key dead.
+    internal static bool IsActive => instance != null && !instance.faulted;
 
-    // One gate per routine, owned by this instance so they can never outlive it.
+    private const int MaxConsecutiveFailures = 3;
+    private int consecutiveFailures;
+    private bool faulted;
+
+    // Instance fields, so the gates die with the runner.
     private readonly CoroutineGate dropAllGate = new();
     private readonly CoroutineGate autoSellGate = new();
 
-    // The company desk only exists on the company moon. It is searched for at most once per scene
-    // change (the flag is cleared by the scene events below), so every other moon costs one
-    // failed FindObjectOfType per scene instead of one per second.
+    // Searched for at most once per scene change; the scene events below clear the cache.
     private DepositItemsDesk? cachedDesk;
     private bool deskSearched;
 
@@ -53,7 +56,13 @@ internal sealed class UpdateRunner : MonoBehaviour
         SceneManager.sceneUnloaded -= OnSceneUnloaded;
     }
 
-    private void OnSceneLoaded(Scene scene, LoadSceneMode mode) => ForgetDesk();
+    // A new scene gets a fresh start: retry the mod after a fault, and re-find the desk.
+    private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+    {
+        consecutiveFailures = 0;
+        faulted = false;
+        ForgetDesk();
+    }
 
     private void OnSceneUnloaded(Scene scene) => ForgetDesk();
 
@@ -65,20 +74,43 @@ internal sealed class UpdateRunner : MonoBehaviour
 
     private void Update()
     {
+        if (faulted)
+            return;
+
+        try
+        {
+            Tick();
+            consecutiveFailures = 0;
+        }
+        catch (Exception e)
+        {
+            consecutiveFailures++;
+            ModLog.Error($"UpdateRunner failed ({consecutiveFailures}/{MaxConsecutiveFailures}): {e}");
+
+            if (consecutiveFailures >= MaxConsecutiveFailures)
+            {
+                faulted = true;
+                ModLog.Error("Too many consecutive failures - vanilla's drop handler takes over until the next scene.");
+            }
+        }
+    }
+
+    private void Tick()
+    {
         PlayerControllerB? player = StartOfRound.Instance?.localPlayerController;
         if (player == null)
             return;
 
-        // Mirror vanilla's own guards (typing in chat, menus, animations, ...). Reset rather than
-        // just return so a key held through one of those states can't later count as a gesture.
+        // Reset rather than just return, so a key held through a blocked state can't later
+        // count as a gesture.
         if (!DropGuard.CanAcceptDropInput(player))
         {
             InputHandler.ResetDropKeyTracking();
             return;
         }
 
-        // Vanilla's handler cancelled ship build mode on a press that got past its grab-animation
-        // and slot-switch-cooldown checks; it no longer runs, so repeat that here.
+        // Vanilla's handler did this on a press that got past its grab-animation and
+        // slot-switch-cooldown checks.
         if (InputHandler.WasDropKeyPressedThisFrame() && ShipBuildModeManager.Instance != null
             && DropGuard.CanCancelBuildMode(player))
             ShipBuildModeManager.Instance.CancelBuildMode();
@@ -96,22 +128,18 @@ internal sealed class UpdateRunner : MonoBehaviour
         switch (InputHandler.Poll())
         {
             case DropGesture.Tap:
-                // Vanilla ignores a drop press mid-grab, mid-throw or right after a slot switch.
                 if (DropGuard.CanDropHeldItemNow(player))
                     DropHeldItem(player);
                 break;
             case DropGesture.DoubleTap:
-                StartDropAll(player, "Double-tap drop detected - dropping all items",
-                    includeReservedSlots: false, ignoreBlacklist: false, logIfNothingToDrop: true);
+                StartDropAll(player, includeReservedSlots: false, ignoreBlacklist: false);
                 break;
             case DropGesture.ForceDrop:
-                StartDropAll(player, "Force drop detected - dropping hotbar items (ignoring blacklist)",
-                    includeReservedSlots: false, ignoreBlacklist: true, logIfNothingToDrop: false);
+                StartDropAll(player, includeReservedSlots: false, ignoreBlacklist: true);
                 break;
             case DropGesture.ForceDropReserved:
                 // Only differs from ForceDrop with ReservedItemSlotCore installed.
-                StartDropAll(player, "Force drop held longer - dropping ALL items including reserved slots (ignoring blacklist)",
-                    includeReservedSlots: true, ignoreBlacklist: true, logIfNothingToDrop: false);
+                StartDropAll(player, includeReservedSlots: true, ignoreBlacklist: true);
                 break;
         }
     }
@@ -122,42 +150,28 @@ internal sealed class UpdateRunner : MonoBehaviour
         if (held == null)
             return;
 
-        // Vanilla put an item that is already over the counter on the counter instead of dropping
-        // it. That part of its handler no longer runs, so do it here.
+        // Vanilla placed an item already over the counter on it instead of dropping it.
         DepositItemsDesk? desk = GetDesk();
         if (desk != null && desk.triggerCollider != null && desk.triggerCollider.bounds.Contains(held.transform.position))
         {
-            ModLog.Info("Single tap detected over the company counter - placing held item on it");
             desk.PlaceItemOnCounter(player);
             return;
         }
 
-        ModLog.Info("Single tap detected - dropping held item immediately");
         player.DiscardHeldObject();
     }
 
-    private void StartDropAll(PlayerControllerB player, string logMessage, bool includeReservedSlots, bool ignoreBlacklist, bool logIfNothingToDrop)
+    private void StartDropAll(PlayerControllerB player, bool includeReservedSlots, bool ignoreBlacklist)
     {
-        // A held force drop reports its gesture every frame, so bail out quietly while a
-        // drop-all is still running; the next frame re-checks once it has finished.
+        // A held force drop reports its gesture every frame; stay quiet while one is running.
         if (dropAllGate.IsRunning)
             return;
 
-        // The first hold stage and double-tap only touch the main hotbar; reserved slots are
-        // left alone until the key has been held longer (includeReservedSlots).
         var items = InventoryAccessor.GetItemSlots(player, includeReservedSlots);
-        if (items.Count == 0)
-        {
-            if (logIfNothingToDrop)
-                ModLog.Info("No items to drop");
-            return;
-        }
-
-        ModLog.Info(logMessage);
-        dropAllGate.Start(this, DropAllRoutine.Run(player, items, ignoreBlacklist));
+        if (items.Count > 0)
+            dropAllGate.Start(this, DropAllRoutine.Run(player, items, ignoreBlacklist));
     }
 
-    // The company desk, or null when this scene has none. Searched for once per scene change.
     private DepositItemsDesk? GetDesk()
     {
         if (!deskSearched)
@@ -170,12 +184,10 @@ internal sealed class UpdateRunner : MonoBehaviour
         return cachedDesk;
     }
 
-    // True while the player is looking at the company desk's counter trigger.
     private bool IsHoveringDesk(PlayerControllerB player, [NotNullWhen(true)] out DepositItemsDesk? desk)
     {
         desk = null;
 
-        // Cheap early-out: the desk can only be the hovered trigger if something is hovered.
         if (player.hoveringOverTrigger == null)
             return false;
 

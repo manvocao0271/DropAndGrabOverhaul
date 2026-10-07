@@ -10,6 +10,10 @@
 - the company desk is now looked up once per scene instead of about once per second on every moon
 - auto-sell no longer sells items from ReservedItemSlotCore reserved slots (main hotbar only)
 - the drop key no longer cancels ship build mode during a grab animation or right after switching slots, same as vanilla
+- auto-sell now waits for each sale to finish over the network before starting the next, and returns you to your original hotbar slot afterwards, like drop-all
+- drop-all and auto-sell now sync your hotbar slot to other players the way scrolling does, so they see the right item in your hands (no more mismatch errors in their logs)
+- if the mod ever hits repeated errors it now steps aside and lets the vanilla drop key work until the next scene
+- the grab-delay patch now leaves the game's code untouched if a game update changes it
 
 ## [0.2.8] - 2026-10-03
 - fixed drop-all aborting early when a grab animation was still playing

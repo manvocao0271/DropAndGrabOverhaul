@@ -12,7 +12,7 @@ A Lethal Company mod that overhauls item dropping, grabbing, and selling: quickl
 * **Sell blacklist** — configurable list of items that auto-sell should skip, separate from the drop blacklist
 * **Configurable grab delay** — lower the delay between picking up items (down to 0.01s) so you can grab in rapid succession
 
-After a double-tap or force drop, the player's originally selected hotbar slot is restored afterward, even if it ends up empty (except a reserved slot this emptied - you're returned to your first hotbar slot instead). Auto-sell does not restore it: you stay on the slot of the last item it sold.
+After a double-tap, force drop or auto-sell, the player's originally selected hotbar slot is restored afterward, even if it ends up empty (except a reserved slot this emptied - you're returned to your first hotbar slot instead).
 
 ## Activation
 
@@ -79,6 +79,8 @@ Planned integrations include:
 * HotbarPlus
 
 Optional integrations will not be required for the base mod to function.
+
+The mod is client-side: it only uses the game's own network calls, so other players don't need it and it works on a vanilla host. Slot changes made by drop-all and auto-sell are synced to other players the same way scrolling is, so they see the right item in your hands.
 
 ## Development
 
