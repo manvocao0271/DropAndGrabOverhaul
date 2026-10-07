@@ -5,7 +5,7 @@
     <AssemblyName>bobabulkerENTERPRISE.DropAndGrabOverhaul</AssemblyName>
     <AssemblyTitle>DropAndGrabOverhaul</AssemblyTitle>
     <!-- Single source of truth for the release version: PackTS passes it to tcli as the package version. -->
-    <Version>0.2.8</Version>
+    <Version>0.2.9</Version>
   </PropertyGroup>
 
   <!-- Mod files to copy to the relative BepInEx directory after build -->

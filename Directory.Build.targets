@@ -121,11 +121,94 @@
       Text=" PackTS must be called with Release configuration."
       Condition="'$(Configuration)' != 'Release'"
     />
-    <PropertyGroup>
-      <BuildArgument Condition="'$(PublishTS)' != 'true'">build</BuildArgument>
-      <BuildArgument Condition="'$(PublishTS)' == 'true'">publish</BuildArgument>
-    </PropertyGroup>
     <Exec Command="dotnet tool restore" />
-    <Exec Command="dotnet tcli $(BuildArgument) --package-version $(Version)" />
+    <Exec Command="dotnet tcli build --package-version $(Version)" />
+  </Target>
+
+  <!--
+    Fails the build unless the Thunderstore package holds exactly the mod and nothing else.
+    tcli only packs what thunderstore.toml lists (icon, readme, [[build.copy]] entries), so this
+    is a safety net against something stray (.git, CLAUDE.md, logs, artifacts/, other zips...)
+    ever being added there. If you deliberately add a file to the package, add it to
+    _TSAllowedEntries as well.
+  -->
+  <UsingTask
+    TaskName="VerifyPackageContents"
+    TaskFactory="RoslynCodeTaskFactory"
+    AssemblyFile="$(MSBuildToolsPath)/Microsoft.Build.Tasks.Core.dll"
+  >
+    <ParameterGroup>
+      <ZipPath ParameterType="System.String" Required="true" />
+      <AllowedEntries ParameterType="System.String" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System" />
+      <Using Namespace="System.Collections.Generic" />
+      <Using Namespace="System.IO" />
+      <Using Namespace="System.IO.Compression" />
+      <Code Type="Fragment" Language="cs">
+        <![CDATA[
+        var allowed = new HashSet<string>(
+            AllowedEntries.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries), StringComparer.Ordinal);
+        var found = new HashSet<string>(StringComparer.Ordinal);
+
+        if (!File.Exists(ZipPath))
+        {
+            Log.LogError("Thunderstore package not found, cannot verify it: " + ZipPath);
+        }
+        else
+        {
+            using (var stream = File.OpenRead(ZipPath))
+            using (var zip = new ZipArchive(stream, ZipArchiveMode.Read))
+            {
+                foreach (ZipArchiveEntry entry in zip.Entries)
+                {
+                    string name = entry.FullName.Replace('\\', '/');
+                    if (name.EndsWith("/"))
+                        continue; // directory entry
+
+                    found.Add(name);
+                    if (!allowed.Contains(name))
+                        Log.LogError("Thunderstore package contains an unexpected file: " + name);
+                }
+            }
+
+            foreach (string name in allowed)
+            {
+                if (!found.Contains(name))
+                    Log.LogError("Thunderstore package is missing an expected file: " + name);
+            }
+
+            if (!Log.HasLoggedErrors)
+                Log.LogMessage(MessageImportance.High,
+                    "Thunderstore package verified (" + found.Count + " files, mod only): " + ZipPath);
+        }
+        ]]>
+      </Code>
+    </Task>
+  </UsingTask>
+
+  <Target
+    Name="VerifyTSPackage"
+    AfterTargets="PackTS"
+    Condition="'$(Configuration)' == 'Release' And '$(ThunderstorePackable)' != 'false'"
+  >
+    <PropertyGroup>
+      <_TSPackagePath>$(SolutionRoot)artifacts/thunderstore/$(AssemblyName.Replace('.', '-'))-$(Version).zip</_TSPackagePath>
+      <_TSAllowedEntries>manifest.json;icon.png;README.md;CHANGELOG.md;LICENSE;plugins/$(AssemblyName).dll</_TSAllowedEntries>
+    </PropertyGroup>
+    <VerifyPackageContents ZipPath="$(_TSPackagePath)" AllowedEntries="$(_TSAllowedEntries)" />
+  </Target>
+
+  <!--
+    Only runs after VerifyTSPackage succeeded, so a package with stray files is never uploaded.
+    tcli publish rebuilds the package from the same inputs before uploading it.
+  -->
+  <Target
+    Name="PublishTSPackage"
+    AfterTargets="VerifyTSPackage"
+    Condition="'$(Configuration)' == 'Release' And '$(ThunderstorePackable)' != 'false' And '$(PublishTS)' == 'true'"
+  >
+    <Exec Command="dotnet tcli publish --package-version $(Version)" />
   </Target>
 </Project>

@@ -8,11 +8,11 @@ A Lethal Company mod that overhauls item dropping, grabbing, and selling: quickl
 * **Force drop** — hold the drop key to drop everything in your hotbar, ignoring the blacklist
 * **Reserved slot drop** *(optional, requires [ReservedItemSlotCore](https://thunderstore.io/c/lethal-company/p/FlipMods/ReservedItemSlotCore/))* — keep holding a little longer to also drop the items in your reserved item slots
 * **Drop blacklist** — configurable list of items that are never dropped by double-tap/force-drop
-* **Auto-sell at the company desk** — press the drop key once while looking at the counter to automatically place all sellable items on it, one at a time
+* **Auto-sell at the company desk** — press the drop key once while looking at the counter to automatically place all sellable items from your main hotbar on it, one at a time
 * **Sell blacklist** — configurable list of items that auto-sell should skip, separate from the drop blacklist
 * **Configurable grab delay** — lower the delay between picking up items (down to 0.01s) so you can grab in rapid succession
 
-In all cases, the player's originally selected hotbar slot is restored afterward, even if it ends up empty (except a reserved slot this emptied - you're returned to your first hotbar slot instead).
+After a double-tap or force drop, the player's originally selected hotbar slot is restored afterward, even if it ends up empty (except a reserved slot this emptied - you're returned to your first hotbar slot instead). Auto-sell does not restore it: you stay on the slot of the last item it sold.
 
 ## Activation
 
@@ -35,7 +35,7 @@ If [ReservedItemSlotCore](https://thunderstore.io/c/lethal-company/p/FlipMods/Re
 
 ### Auto-Sell
 
-While looking at the company desk's counter, press the drop key once to put all eligible scrap items from your inventory onto the counter.
+While looking at the company desk's counter, press the drop key once to put all eligible scrap items from your main hotbar onto the counter. Items in [ReservedItemSlotCore](https://thunderstore.io/c/lethal-company/p/FlipMods/ReservedItemSlotCore/) reserved slots are never sold.
 
 ## Configuration
 
@@ -61,6 +61,8 @@ SellBlacklistedItems     Comma-separated item names that auto-sell should skip
 LogLevels                Which of this mod's own log levels to show, comma-separated (default: Fatal, Error, Warning)
                           Acceptable values: None, Fatal, Error, Warning, Message, Info, Debug, All
 ```
+
+Item names in both blacklists must match the in-game item name exactly, including capitalization (`Walkie-talkie`, not `walkie-talkie`). Both lists start from the same default.
 
 ## Compatibility
 
@@ -105,10 +107,18 @@ The compiled plugin is generated under:
 artifacts/bin/DropAndGrabOverhaul/
 ```
 
+### Packaging for Thunderstore
+
+`dotnet build -c Release` also builds the Thunderstore package into `artifacts/thunderstore/`. The package contains only the mod: `manifest.json`, `icon.png`, `README.md` (from `THUNDERSTORE.md`), `CHANGELOG.md`, `LICENSE` and `plugins/bobabulkerENTERPRISE.DropAndGrabOverhaul.dll`. The build fails if the zip holds anything else, or is missing any of those. Add `-p:PublishTS=true` to upload it after that check passes (needs `TCLI_AUTH_TOKEN`).
+
+When releasing, set the same version in `DropAndGrabOverhaul.csproj`, `thunderstore.toml` and a new `CHANGELOG.md` entry.
+
 ## Project Structure
 
 ```text
 DropAndGrabOverhaul/
+├── .config/
+│   └── dotnet-tools.json
 ├── src/
 │   └── DropAndGrabOverhaul/
 │       ├── Compatibility/
@@ -140,15 +150,15 @@ DropAndGrabOverhaul/
 │       ├── Plugin.cs
 │       ├── UpdateRunner.cs
 │       └── thunderstore.toml
-├── docs/
-│   └── archive/
 ├── CHANGELOG.md
 ├── Directory.Build.props
 ├── Directory.Build.targets
 ├── DropAndGrabOverhaul.slnx
 ├── LICENSE
 ├── README.md
-└── global.json
+├── THUNDERSTORE.md
+├── global.json
+└── icon.png
 ```
 
 ## Development Roadmap

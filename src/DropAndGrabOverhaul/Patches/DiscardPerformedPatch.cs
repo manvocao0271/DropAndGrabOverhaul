@@ -12,7 +12,7 @@ namespace DropAndGrabOverhaul.Patches;
 //
 // What vanilla did in there besides dropping, and where it lives now:
 //   - guard checks (typing in chat, menus, animations...)   -> Inputs/DropGuard
-//   - ShipBuildModeManager.CancelBuildMode() on each press   -> UpdateRunner.Update
+//   - ShipBuildModeManager.CancelBuildMode() on an accepted press -> UpdateRunner.Update
 //   - put a held item that is over the counter on the counter -> UpdateRunner.DropHeldItem
 //   - controller + ship build mode: store the object          -> left to vanilla (below)
 //

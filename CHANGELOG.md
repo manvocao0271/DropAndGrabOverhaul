@@ -11,6 +11,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - vanilla's drop key is left alone if the mod can't read the key or isn't running
 - tapping the drop key while a held item is over the company counter places it on the counter (as vanilla does), even with auto-sell off
 - the company desk is now looked up once per scene instead of about once per second on every moon
+- auto-sell no longer sells items from ReservedItemSlotCore reserved slots (main hotbar only)
+- the drop key no longer cancels ship build mode during a grab animation or right after switching slots, same as vanilla
 
 ## [0.2.8] - 2026-10-03
 - fixed drop-all aborting early when a grab animation was still playing

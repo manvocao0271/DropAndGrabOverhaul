@@ -9,7 +9,7 @@ namespace = "bobabulkerENTERPRISE"
 name = "DropAndGrabOverhaul"
 # Overridden by the csproj <Version> when built via PackTS (tcli --package-version).
 # Keep in sync anyway, in case tcli is run by hand.
-versionNumber = "0.2.8"
+versionNumber = "0.2.9"
 description = "Double-tap your drop key to drop all scrap. Hold it to force drop all items. Press it at the company counter to put it all on to sell at once. Remove the grab item cooldown. (Rebindable)"
 websiteUrl = ""
 containsNsfwContent = false

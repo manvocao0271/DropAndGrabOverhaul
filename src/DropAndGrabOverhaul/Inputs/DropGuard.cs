@@ -55,6 +55,17 @@ internal static class DropGuard
     }
 
     /// <summary>
+    /// True if a drop-key press may cancel ship build mode right now. Vanilla's handler only gets
+    /// as far as CancelBuildMode once its grab-animation and slot-switch-cooldown checks pass, so a
+    /// press mid-grab or just after a slot switch must leave build mode alone. (Its remaining
+    /// checks - chat, special interaction, item use, jetpack - are already covered by
+    /// <see cref="CanAcceptDropInput"/>.) Deliberately not gated on throwingObject or
+    /// isHoldingObject: vanilla cancels build mode before it looks at those.
+    /// </summary>
+    public static bool CanCancelBuildMode(PlayerControllerB player)
+        => !player.isGrabbingObjectAnimation && player.timeSinceSwitchingSlots >= SlotSwitchCooldownSeconds;
+
+    /// <summary>
     /// True if a single tap may drop the currently held item right now - the held-item half of
     /// vanilla's checks. Not applied to drop-all, which waits these states out itself.
     /// </summary>

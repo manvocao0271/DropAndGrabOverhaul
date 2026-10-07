@@ -77,8 +77,10 @@ internal sealed class UpdateRunner : MonoBehaviour
             return;
         }
 
-        // Vanilla's handler cancelled ship build mode on every accepted press; it no longer runs.
-        if (InputHandler.WasDropKeyPressedThisFrame() && ShipBuildModeManager.Instance != null)
+        // Vanilla's handler cancelled ship build mode on a press that got past its grab-animation
+        // and slot-switch-cooldown checks; it no longer runs, so repeat that here.
+        if (InputHandler.WasDropKeyPressedThisFrame() && ShipBuildModeManager.Instance != null
+            && DropGuard.CanCancelBuildMode(player))
             ShipBuildModeManager.Instance.CancelBuildMode();
 
         // Looking at the company counter: the drop key sells instead of dropping.
