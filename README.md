@@ -12,7 +12,7 @@ A Lethal Company mod that overhauls item dropping, grabbing, and placing items o
 * **Place blacklist** — configurable list of items that auto-place should skip, separate from the drop blacklist
 * **Configurable grab delay** — lower the delay between picking up items (down to 0.01s) so you can grab in rapid succession
 
-After a double-tap, force drop or auto-place, the player's originally selected hotbar slot is restored afterward, even if it ends up empty (except a reserved slot this emptied - you're returned to your first hotbar slot instead).
+After a double-tap, force drop or auto-place you stay on the slot of the last item handled. Drop-all and auto-place never run at the same time: while one is running, the other's key presses are ignored.
 
 ## Activation
 
@@ -54,7 +54,6 @@ BlacklistedItems         Comma-separated item names never dropped by double-tap/
 GrabDelay                Delay in seconds between grabbing items, vanilla is 0.2 (default: 0.01)
 
 [Place]
-AutoPlaceInventory       Enables pressing the drop key once at the counter to auto-place (default: true)
 PlaceBlacklistedItems    Comma-separated item names that auto-place should skip
 
 [Logging]

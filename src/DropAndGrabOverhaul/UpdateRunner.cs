@@ -1,6 +1,5 @@
 using System;
 using System.Diagnostics.CodeAnalysis;
-using DropAndGrabOverhaul.Configuration;
 using DropAndGrabOverhaul.Features;
 using DropAndGrabOverhaul.Inputs;
 using DropAndGrabOverhaul.Inventory;
@@ -24,9 +23,10 @@ internal sealed class UpdateRunner : MonoBehaviour
     private int consecutiveFailures;
     private bool faulted;
 
-    // Instance fields, so the gates die with the runner.
-    private readonly CoroutineGate dropAllGate = new();
-    private readonly CoroutineGate autoPlaceGate = new();
+    // One gate for both routines: each drives the player's slot, so only one may run at a time.
+    // Whichever starts first wins; drop-all gestures and auto-place presses made meanwhile are
+    // ignored. Single taps are not gated. Instance field, so it dies with the runner.
+    private readonly CoroutineGate routineGate = new();
 
     // Searched for at most once per scene change; the scene events below clear the cache.
     private DepositItemsDesk? cachedDesk;
@@ -116,10 +116,10 @@ internal sealed class UpdateRunner : MonoBehaviour
             ShipBuildModeManager.Instance.CancelBuildMode();
 
         // Looking at the company counter: the drop key places items on it instead of dropping.
-        if (PlaceConfiguration.AutoPlaceInventory && IsHoveringDesk(player, out DepositItemsDesk? desk))
+        if (IsHoveringDesk(player, out DepositItemsDesk? desk))
         {
-            if (!autoPlaceGate.IsRunning && InputHandler.IsDropKeyPressed())
-                autoPlaceGate.Start(this, AutoPlaceRoutine.Run(player, desk));
+            if (!routineGate.IsRunning && InputHandler.IsDropKeyPressed())
+                routineGate.Start(this, AutoPlaceRoutine.Run(player, desk));
 
             InputHandler.ResetDropKeyTracking();
             return;
@@ -163,13 +163,13 @@ internal sealed class UpdateRunner : MonoBehaviour
 
     private void StartDropAll(PlayerControllerB player, bool includeReservedSlots, bool ignoreBlacklist)
     {
-        // A held force drop reports its gesture every frame; stay quiet while one is running.
-        if (dropAllGate.IsRunning)
+        // A held force drop reports its gesture every frame, and auto-place may be running too.
+        if (routineGate.IsRunning)
             return;
 
         var items = InventoryAccessor.GetItemSlots(player, includeReservedSlots);
         if (items.Count > 0)
-            dropAllGate.Start(this, DropAllRoutine.Run(player, items, ignoreBlacklist));
+            routineGate.Start(this, DropAllRoutine.Run(player, items, ignoreBlacklist));
     }
 
     private DepositItemsDesk? GetDesk()

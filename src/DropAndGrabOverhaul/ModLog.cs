@@ -3,10 +3,10 @@ using DropAndGrabOverhaul.Configuration;
 
 namespace DropAndGrabOverhaul;
 
-// Every log call in this mod goes through here instead of a ManualLogSource directly, so
-// Configuration/LoggingConfiguration's LogLevels selection applies everywhere uniformly. This is
-// separate from - and independent of - BepInEx's own global console/file log-level filter, which
-// applies to every mod at once and isn't what LoggingConfiguration controls.
+// Every log call in this mod goes through here instead of a ManualLogSource directly, so the
+// LogLevels config entry (LoggingConfiguration, in Configuration/Settings.cs) applies everywhere
+// uniformly. This is separate from - and independent of - BepInEx's own global console/file
+// log-level filter, which applies to every mod at once and isn't what LoggingConfiguration controls.
 internal static class ModLog
 {
     private static ManualLogSource? source;

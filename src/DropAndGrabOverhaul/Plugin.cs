@@ -6,9 +6,9 @@ using HarmonyLib;
 namespace DropAndGrabOverhaul;
 
 // Bootstrap only: config, then Harmony. Behaviour lives elsewhere:
-//   UpdateRunner.cs   per-frame input handling (created by Patches/StartOfRoundPatch.cs)
-//   Features/         the drop-all and auto-place coroutines
-//   Patches/          every Harmony patch, one class each
+//   UpdateRunner.cs        per-frame input handling (created by StartOfRoundPatch)
+//   Features/Routines.cs   the drop-all and auto-place coroutines
+//   Patches/Patches.cs     every Harmony patch, one class each
 [BepInAutoPlugin]
 [BepInDependency("FlipMods.ReservedItemSlotCore", BepInDependency.DependencyFlags.SoftDependency)]
 public partial class Plugin : BaseUnityPlugin
@@ -17,16 +17,14 @@ public partial class Plugin : BaseUnityPlugin
     {
         ModLog.Initialize(Logger);
 
-        // LoggingConfiguration first: every other config class logs at startup, and those
-        // lines are gated by whatever it resolves to.
+        // LoggingConfiguration first, so the log-level gate is set up before anything else logs.
         LoggingConfiguration.Initialize(Config);
         ItemBlacklist.Initialize(Config);
         InputConfiguration.Initialize(Config);
         GrabConfiguration.Initialize(Config);
         PlaceConfiguration.Initialize(Config);
 
-        // Every patch class carries its own [HarmonyPatch] target, so scanning the assembly
-        // finds them all (see CLAUDE.md gotcha #1 for why this must not be PatchAll()).
+        // Applies every class that carries a class-level [HarmonyPatch] (CLAUDE.md gotcha #1).
         new Harmony(Id).PatchAll(Assembly.GetExecutingAssembly());
 
         ModLog.Info($"Plugin {Name} is loaded!");

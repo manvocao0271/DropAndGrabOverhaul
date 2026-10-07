@@ -7,7 +7,8 @@ namespace DropAndGrabOverhaul.Configuration;
 // case-sensitively, on purpose. Re-parsed on SettingChanged so in-game edits apply immediately.
 internal sealed class ItemNameList
 {
-    // Default for every list: all of the store-purchasable grabbable items.
+    // Default for every list: the vanilla store items and other gear worth keeping, plus some
+    // items from popular mods.
     public const string DefaultNames =
         "Walkie-talkie, Flashlight, Shovel, Lockpicker, Pro-flashlight, Stun grenade, Boombox, TZP-Inhalant, Zap gun, Jetpack, Extension ladder, Radar-booster, Spray paint, Weed killer, Belt bag, Stop sign, Yield sign, Kitchen knife, Shotgun, Ammo, Key, Medic Bag, Night Vision Goggles, Cat, Cat Food, IFireAxe, IBaseball bat, Plunger, Mega Flashlight, Firework Crate, Firework Rocket, Beacon, Emergency Flare, Pile of Glowsticks, Flip Lighter, Bullet Lighter, Impact flash, Jammer, Light crowbar, Military shotgun, Single shotgun, Gohei, Pink Guitar, Antique Candle, Industrial Flashlight";
 

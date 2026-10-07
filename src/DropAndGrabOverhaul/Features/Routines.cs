@@ -52,7 +52,7 @@ internal sealed class CoroutineGate
 // Helpers shared by the two routines.
 internal static class RoutineSupport
 {
-    // Bounded so a stuck flag can never leave a CoroutineGate busy forever.
+    // Bounded so a stuck flag can never leave the CoroutineGate busy forever.
     private const float IdleTimeoutSeconds = 3f;
 
     // A grab animation is playing, or a drop/placement is still waiting for its network echo.
@@ -76,36 +76,16 @@ internal static class RoutineSupport
         if (changed)
             player.SwitchToSlotServerRpc(slot);
     }
-
-    public static void RestoreSlot(PlayerControllerB player, int originalSlot)
-    {
-        int restoreSlot = originalSlot;
-
-        // Don't go back to a reserved slot this routine just emptied; use the first hotbar slot.
-        if (restoreSlot >= 0 && restoreSlot < player.ItemSlots.Length
-            && InventoryAccessor.IsReservedSlot(player, restoreSlot)
-            && player.ItemSlots[restoreSlot] == null)
-        {
-            restoreSlot = 0;
-        }
-
-        if (player.currentItemSlot != restoreSlot && player.currentlyHeldObjectServer == null && !player.throwingObject)
-            SwitchToSlot(player, restoreSlot);
-    }
 }
 
 internal static class AutoPlaceRoutine
 {
     private const float DelayBetweenPlacementsSeconds = 0.2f;
 
-    // Places every eligible scrap item on the counter, one at a time, then restores the original
-    // hotbar slot. Main hotbar only: reserved slots are never placed.
+    // Places every eligible scrap item on the counter, one at a time. Main hotbar only: reserved
+    // slots are never placed. Leaves you on the slot of the last item placed.
     public static IEnumerator Run(PlayerControllerB player, DepositItemsDesk desk)
     {
-        int originalSlot = player.currentItemSlot;
-        bool placedAny = false;
-        bool abortedEarly = false;
-
         foreach ((int slot, GrabbableObject item) in InventoryAccessor.GetItemSlots(player, includeReservedSlots: false))
         {
             // Wait *before* acting: the previous placement may still be waiting for its
@@ -121,8 +101,7 @@ internal static class AutoPlaceRoutine
             if (RoutineSupport.IsBusy(player))
             {
                 ModLog.Warning("Timed out waiting for the previous grab/placement to finish - stopping auto-place early to avoid desyncing the rest.");
-                abortedEarly = true;
-                break;
+                yield break;
             }
 
             // The list is a snapshot but this loop yields: re-check the slot still holds this item.
@@ -134,40 +113,18 @@ internal static class AutoPlaceRoutine
 
             RoutineSupport.SwitchToSlot(player, slot);
             desk.PlaceItemOnCounter(player);
-            placedAny = true;
 
             yield return new WaitForSeconds(DelayBetweenPlacementsSeconds);
         }
-
-        if (abortedEarly || !placedAny)
-            yield break;
-
-        // The last placement's echo is still outstanding; let it land before touching the slot again.
-        float lastWaitStart = Time.time;
-        while (RoutineSupport.ShouldKeepWaiting(player, lastWaitStart))
-            yield return null;
-
-        if (RoutineSupport.IsPlayerGone(player))
-            yield break;
-
-        if (RoutineSupport.IsBusy(player))
-        {
-            ModLog.Warning("Timed out waiting for the last placement to finish over the network - leaving the selected slot alone.");
-            yield break;
-        }
-
-        RoutineSupport.RestoreSlot(player, originalSlot);
     }
 }
 
 internal static class DropAllRoutine
 {
-    // Drops every (slot, item) pair in order, then restores the original hotbar slot.
+    // Drops every (slot, item) pair in order. Leaves you on the slot of the last item dropped.
     public static IEnumerator Run(PlayerControllerB player, List<(int Slot, GrabbableObject Item)> items, bool ignoreBlacklist)
     {
-        int originalSlot = player.currentItemSlot;
         bool droppedReservedItem = false;
-        bool abortedEarly = false;
 
         foreach ((int slot, GrabbableObject item) in items)
         {
@@ -184,7 +141,6 @@ internal static class DropAllRoutine
             if (RoutineSupport.IsBusy(player))
             {
                 ModLog.Warning("Timed out waiting for the previous grab/drop to finish - stopping drop-all early to avoid desyncing the rest.");
-                abortedEarly = true;
                 break;
             }
 
@@ -201,36 +157,22 @@ internal static class DropAllRoutine
             player.DiscardHeldObject();
         }
 
-        // The last drop's echo is still outstanding; let it land before touching the slot again.
-        if (!abortedEarly)
-        {
-            float lastWaitStart = Time.time;
-            while (RoutineSupport.ShouldKeepWaiting(player, lastWaitStart))
-                yield return null;
+        if (!droppedReservedItem)
+            yield break;
 
-            if (RoutineSupport.IsPlayerGone(player))
-                yield break;
-
-            if (RoutineSupport.IsBusy(player))
-            {
-                ModLog.Warning("Timed out waiting for the last drop to finish over the network - leaving the selected slot alone.");
-                abortedEarly = true;
-            }
-        }
-
-        // ReservedItemSlotCore schedules its own slot switch after a reserved drop; let it run
-        // first so it can't override the restore below (CLAUDE.md gotcha #10).
-        if (droppedReservedItem)
-        {
-            yield return new WaitForEndOfFrame();
+        // ReservedItemSlotCore schedules its own slot switch after a reserved drop and only
+        // refreshes its reserved-slot HUD for the first reserved drop of a sequence (CLAUDE.md
+        // gotcha #10). Let the last drop's echo and that switch land, then refresh once.
+        float lastWaitStart = Time.time;
+        while (RoutineSupport.ShouldKeepWaiting(player, lastWaitStart))
             yield return null;
-        }
 
-        if (!abortedEarly)
-            RoutineSupport.RestoreSlot(player, originalSlot);
+        if (RoutineSupport.IsPlayerGone(player))
+            yield break;
 
-        // RIS only refreshes its reserved-slot HUD for the first reserved drop of a sequence.
-        if (droppedReservedItem)
-            ReservedItemSlotCompat.RefreshHudAfterReservedDrop();
+        yield return new WaitForEndOfFrame();
+        yield return null;
+
+        ReservedItemSlotCompat.RefreshHudAfterReservedDrop();
     }
 }
