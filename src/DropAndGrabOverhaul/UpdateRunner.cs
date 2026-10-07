@@ -11,7 +11,7 @@ using UnityEngine.SceneManagement;
 namespace DropAndGrabOverhaul;
 
 // The per-frame loop: turns drop-key input into single drops, drop-all sequences and desk
-// auto-sell. Created lazily by StartOfRoundPatch (CLAUDE.md gotcha #2).
+// auto-place. Created lazily by StartOfRoundPatch (CLAUDE.md gotcha #2).
 internal sealed class UpdateRunner : MonoBehaviour
 {
     private static UpdateRunner? instance;
@@ -26,7 +26,7 @@ internal sealed class UpdateRunner : MonoBehaviour
 
     // Instance fields, so the gates die with the runner.
     private readonly CoroutineGate dropAllGate = new();
-    private readonly CoroutineGate autoSellGate = new();
+    private readonly CoroutineGate autoPlaceGate = new();
 
     // Searched for at most once per scene change; the scene events below clear the cache.
     private DepositItemsDesk? cachedDesk;
@@ -115,11 +115,11 @@ internal sealed class UpdateRunner : MonoBehaviour
             && DropGuard.CanCancelBuildMode(player))
             ShipBuildModeManager.Instance.CancelBuildMode();
 
-        // Looking at the company counter: the drop key sells instead of dropping.
-        if (SellConfiguration.AutoSellInventory && IsHoveringDesk(player, out DepositItemsDesk? desk))
+        // Looking at the company counter: the drop key places items on it instead of dropping.
+        if (PlaceConfiguration.AutoPlaceInventory && IsHoveringDesk(player, out DepositItemsDesk? desk))
         {
-            if (!autoSellGate.IsRunning && InputHandler.IsDropKeyPressed())
-                autoSellGate.Start(this, AutoSellRoutine.Run(player, desk));
+            if (!autoPlaceGate.IsRunning && InputHandler.IsDropKeyPressed())
+                autoPlaceGate.Start(this, AutoPlaceRoutine.Run(player, desk));
 
             InputHandler.ResetDropKeyTracking();
             return;

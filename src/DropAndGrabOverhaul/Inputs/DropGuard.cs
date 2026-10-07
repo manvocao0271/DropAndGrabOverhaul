@@ -11,7 +11,7 @@ internal static class DropGuard
     private const float SlotSwitchCooldownSeconds = 0.2f;
     private const int JetpackItemId = 13;
 
-    // The drop key may do anything at all: tap, double-tap, force drop, desk auto-sell.
+    // The drop key may do anything at all: tap, double-tap, force drop, desk auto-place.
     public static bool CanAcceptDropInput(PlayerControllerB player)
     {
         if (!player.IsOwner || !player.isPlayerControlled || (player.IsServer && !player.isHostPlayerObject))

@@ -1,6 +1,6 @@
 # Drop And Grab Overhaul
 
-A Lethal Company mod that overhauls item dropping, grabbing, and selling: quickly drop or sell your whole inventory, and optionally remove the vanilla item-grab cooldown.
+A Lethal Company mod that overhauls item dropping, grabbing, and placing items on the company counter: quickly drop your whole inventory or put it on the counter, and optionally remove the vanilla item-grab cooldown.
 
 ## Features
 
@@ -8,11 +8,11 @@ A Lethal Company mod that overhauls item dropping, grabbing, and selling: quickl
 * **Force drop** — hold the drop key to drop everything in your hotbar, ignoring the blacklist
 * **Reserved slot drop** *(optional, requires [ReservedItemSlotCore](https://thunderstore.io/c/lethal-company/p/FlipMods/ReservedItemSlotCore/))* — keep holding a little longer to also drop the items in your reserved item slots
 * **Drop blacklist** — configurable list of items that are never dropped by double-tap/force-drop
-* **Auto-sell at the company desk** — press the drop key once while looking at the counter to automatically place all sellable items from your main hotbar on it, one at a time
-* **Sell blacklist** — configurable list of items that auto-sell should skip, separate from the drop blacklist
+* **Auto-place at the company desk** — press the drop key once while looking at the counter to automatically place all eligible scrap from your main hotbar on it, one at a time
+* **Place blacklist** — configurable list of items that auto-place should skip, separate from the drop blacklist
 * **Configurable grab delay** — lower the delay between picking up items (down to 0.01s) so you can grab in rapid succession
 
-After a double-tap, force drop or auto-sell, the player's originally selected hotbar slot is restored afterward, even if it ends up empty (except a reserved slot this emptied - you're returned to your first hotbar slot instead).
+After a double-tap, force drop or auto-place, the player's originally selected hotbar slot is restored afterward, even if it ends up empty (except a reserved slot this emptied - you're returned to your first hotbar slot instead).
 
 ## Activation
 
@@ -33,9 +33,9 @@ Hold the drop key for a configurable duration to drop everything in your hotbar,
 
 If [ReservedItemSlotCore](https://thunderstore.io/c/lethal-company/p/FlipMods/ReservedItemSlotCore/) is installed, the first hold only drops your main hotbar. Keep holding for a configurable extra duration to drop the items in your reserved item slots too. Double-tap never drops reserved slots.
 
-### Auto-Sell
+### Auto-Place
 
-While looking at the company desk's counter, press the drop key once to put all eligible scrap items from your main hotbar onto the counter. Items in [ReservedItemSlotCore](https://thunderstore.io/c/lethal-company/p/FlipMods/ReservedItemSlotCore/) reserved slots are never sold.
+While looking at the company desk's counter, press the drop key once to put all eligible scrap items from your main hotbar onto the counter. Items in [ReservedItemSlotCore](https://thunderstore.io/c/lethal-company/p/FlipMods/ReservedItemSlotCore/) reserved slots are never placed. The mod only places the items; the Company takes them off the counter and pays for them as usual.
 
 ## Configuration
 
@@ -53,9 +53,9 @@ BlacklistedItems         Comma-separated item names never dropped by double-tap/
 [Grab]
 GrabDelay                Delay in seconds between grabbing items, vanilla is 0.2 (default: 0.01)
 
-[Sell]
-AutoSellInventory        Enables pressing the drop key once at the counter to auto-sell (default: true)
-SellBlacklistedItems     Comma-separated item names that auto-sell should skip
+[Place]
+AutoPlaceInventory       Enables pressing the drop key once at the counter to auto-place (default: true)
+PlaceBlacklistedItems    Comma-separated item names that auto-place should skip
 
 [Logging]
 LogLevels                Which of this mod's own log levels to show, comma-separated (default: Fatal, Error, Warning)
@@ -80,7 +80,7 @@ Planned integrations include:
 
 Optional integrations will not be required for the base mod to function.
 
-The mod is client-side: it only uses the game's own network calls, so other players don't need it and it works on a vanilla host. Slot changes made by drop-all and auto-sell are synced to other players the same way scrolling is, so they see the right item in your hands.
+The mod is client-side: it only uses the game's own network calls, so other players don't need it and it works on a vanilla host. Slot changes made by drop-all and auto-place are synced to other players the same way scrolling is, so they see the right item in your hands.
 
 ## Development
 
@@ -162,7 +162,7 @@ DropAndGrabOverhaul/
 * [x] Verify plugin loads in Lethal Company
 * [x] Implement double-tap drop-all with blacklist support
 * [x] Implement force-drop (hold key, ignores blacklist)
-* [x] Implement auto-sell at the company desk with its own blacklist
+* [x] Implement auto-place at the company desk with its own blacklist
 * [x] Implement optional grab cooldown removal
 * [x] Add ReservedItemSlotCore support (hold longer to drop reserved slots)
 * [x] Package for Thunderstore

@@ -1,6 +1,6 @@
 ## Design Philosophy
 
-Currently, players manually cycle through their inventory to drop their items and the same tedious work goes for selling on the company counter. Luckily, this does not have to be a permanent problem. The solution is to eliminate the monotonous actions of scrap dropping, grabbing, and selling.
+Currently, players manually cycle through their inventory to drop their items and the same tedious work goes for putting scrap on the company counter. Luckily, this does not have to be a permanent problem. The solution is to eliminate the monotonous actions of scrap dropping, grabbing, and placing.
 
 DropAndGrabOverhaul provides a balanced (or at least not overly powerful) alternative to easily do these repetitive and time-consuming actions. This mod lets players immediately drop all looted scrap which favors more time spent in the building. Additionally, high quotas can often lead to large piles of scrap so near-instant grabbing to transport faster becomes a necessity.
 
@@ -9,7 +9,7 @@ DropAndGrabOverhaul provides a balanced (or at least not overly powerful) altern
 * **Double-tap drop**: drop all scrap/items in main hotbar slots respecting blacklist (HotbarPlus friendly)
 * **Hold drop**: force drop your main hotbar at once, ignoring the blacklist entirely
 * **Hold drop, a little longer**: *(optional [ReservedItemSlotCore](https://thunderstore.io/c/lethal-company/p/FlipMods/ReservedItemSlotCore/))* keep holding to also drop everything in your reserved item slots
-* **Drop at the company desk**: drop all your sellable scrap on the counter automatically
+* **Auto-place at the company desk**: place all your scrap on the counter automatically
 * **Quick grab**: near instantaneous grabbing
 
 ## Blacklists

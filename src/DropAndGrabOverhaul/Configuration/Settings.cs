@@ -97,28 +97,28 @@ internal static class ItemBlacklist
     public static bool IsBlacklisted(string itemName) => items.Contains(itemName);
 }
 
-internal static class SellConfiguration
+internal static class PlaceConfiguration
 {
-    private static ConfigEntry<bool> autoSellInventory = null!;
-    private static ItemNameList sellBlacklist = null!;
+    private static ConfigEntry<bool> autoPlaceInventory = null!;
+    private static ItemNameList placeBlacklist = null!;
 
-    public static bool AutoSellInventory => autoSellInventory.Value;
+    public static bool AutoPlaceInventory => autoPlaceInventory.Value;
 
     public static void Initialize(ConfigFile config)
     {
-        autoSellInventory = config.Bind(
-            section: "Sell",
-            key: "AutoSellInventory",
+        autoPlaceInventory = config.Bind(
+            section: "Place",
+            key: "AutoPlaceInventory",
             defaultValue: true,
-            description: "Pressing the drop key once while at the company counter will automatically put all sellable items in the inventory on the counter."
+            description: "Pressing the drop key once while at the company counter will automatically put all eligible scrap in the main hotbar on the counter. The Company then takes it as usual."
         );
 
-        sellBlacklist = new ItemNameList(
+        placeBlacklist = new ItemNameList(
             config,
-            section: "Sell",
-            key: "SellBlacklistedItems",
-            description: "Comma-separated list of item names that should NOT be automatically sold (Walkie-talkie, Flashlight, Shovel, etc.)");
+            section: "Place",
+            key: "PlaceBlacklistedItems",
+            description: "Comma-separated list of item names that should NOT be automatically placed on the counter (Walkie-talkie, Flashlight, Shovel, etc.)");
     }
 
-    public static bool IsSellBlacklisted(string itemName) => sellBlacklist.Contains(itemName);
+    public static bool IsPlaceBlacklisted(string itemName) => placeBlacklist.Contains(itemName);
 }

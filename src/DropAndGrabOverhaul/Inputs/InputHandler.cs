@@ -56,7 +56,7 @@ internal static class InputHandler
         return tracker.Update(Time.time, WasDropKeyPressedThisFrame(), IsDropKeyPressed(), in timings);
     }
 
-    // Call while something else (desk auto-sell) consumes the key instead of Poll. If the key is
+    // Call while something else (desk auto-place) consumes the key instead of Poll. If the key is
     // still down it also blocks gestures until released, so a hold that carries on past the
     // counter can't turn into an unintended force drop.
     public static void ResetDropKeyTracking() => tracker.Reset(IsDropKeyPressed());

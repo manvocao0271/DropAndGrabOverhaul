@@ -32,7 +32,7 @@ internal sealed class DropGestureTracker
     private float holdStartTime;
 
     // Set by Reset while the key is still down: blocks any gesture until it is genuinely
-    // released, so a hold that outlives whatever consumed the press (desk auto-sell) can't
+    // released, so a hold that outlives whatever consumed the press (desk auto-place) can't
     // accumulate into an unintended force drop.
     private bool suppressUntilReleased;
 
@@ -83,7 +83,7 @@ internal sealed class DropGestureTracker
         return DropGesture.Tap;
     }
 
-    // Forgets any in-progress tap or hold, for when something else (desk auto-sell) consumed the key.
+    // Forgets any in-progress tap or hold, for when something else (desk auto-place) consumed the key.
     public void Reset(bool keyIsDown)
     {
         holding = false;

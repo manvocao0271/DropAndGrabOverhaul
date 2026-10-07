@@ -55,7 +55,7 @@ internal static class RoutineSupport
     // Bounded so a stuck flag can never leave a CoroutineGate busy forever.
     private const float IdleTimeoutSeconds = 3f;
 
-    // A grab animation is playing, or a drop/sale is still waiting for its network echo.
+    // A grab animation is playing, or a drop/placement is still waiting for its network echo.
     public static bool IsBusy(PlayerControllerB player)
         => player.isGrabbingObjectAnimation || player.throwingObject;
 
@@ -94,21 +94,21 @@ internal static class RoutineSupport
     }
 }
 
-internal static class AutoSellRoutine
+internal static class AutoPlaceRoutine
 {
-    private const float DelayBetweenSalesSeconds = 0.2f;
+    private const float DelayBetweenPlacementsSeconds = 0.2f;
 
     // Places every eligible scrap item on the counter, one at a time, then restores the original
-    // hotbar slot. Main hotbar only: reserved slots are never sold.
+    // hotbar slot. Main hotbar only: reserved slots are never placed.
     public static IEnumerator Run(PlayerControllerB player, DepositItemsDesk desk)
     {
         int originalSlot = player.currentItemSlot;
-        bool soldAny = false;
+        bool placedAny = false;
         bool abortedEarly = false;
 
         foreach ((int slot, GrabbableObject item) in InventoryAccessor.GetItemSlots(player, includeReservedSlots: false))
         {
-            // Wait *before* acting: the previous sale may still be waiting for its
+            // Wait *before* acting: the previous placement may still be waiting for its
             // PlaceObjectClientRpc echo, and switching slots first corrupts
             // currentlyHeldObjectServer (CLAUDE.md gotcha #5).
             float waitStart = Time.time;
@@ -120,7 +120,7 @@ internal static class AutoSellRoutine
 
             if (RoutineSupport.IsBusy(player))
             {
-                ModLog.Warning("Timed out waiting for the previous grab/sale to finish - stopping auto-sell early to avoid desyncing the rest.");
+                ModLog.Warning("Timed out waiting for the previous grab/placement to finish - stopping auto-place early to avoid desyncing the rest.");
                 abortedEarly = true;
                 break;
             }
@@ -129,20 +129,20 @@ internal static class AutoSellRoutine
             if (item == null || slot >= player.ItemSlots.Length || player.ItemSlots[slot] != item || !item.itemProperties.isScrap)
                 continue;
 
-            if (SellConfiguration.IsSellBlacklisted(item.itemProperties.itemName))
+            if (PlaceConfiguration.IsPlaceBlacklisted(item.itemProperties.itemName))
                 continue;
 
             RoutineSupport.SwitchToSlot(player, slot);
             desk.PlaceItemOnCounter(player);
-            soldAny = true;
+            placedAny = true;
 
-            yield return new WaitForSeconds(DelayBetweenSalesSeconds);
+            yield return new WaitForSeconds(DelayBetweenPlacementsSeconds);
         }
 
-        if (abortedEarly || !soldAny)
+        if (abortedEarly || !placedAny)
             yield break;
 
-        // The last sale's echo is still outstanding; let it land before touching the slot again.
+        // The last placement's echo is still outstanding; let it land before touching the slot again.
         float lastWaitStart = Time.time;
         while (RoutineSupport.ShouldKeepWaiting(player, lastWaitStart))
             yield return null;
@@ -152,7 +152,7 @@ internal static class AutoSellRoutine
 
         if (RoutineSupport.IsBusy(player))
         {
-            ModLog.Warning("Timed out waiting for the last sale to finish over the network - leaving the selected slot alone.");
+            ModLog.Warning("Timed out waiting for the last placement to finish over the network - leaving the selected slot alone.");
             yield break;
         }
 

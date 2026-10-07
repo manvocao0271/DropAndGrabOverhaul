@@ -7,7 +7,7 @@ namespace DropAndGrabOverhaul;
 
 // Bootstrap only: config, then Harmony. Behaviour lives elsewhere:
 //   UpdateRunner.cs   per-frame input handling (created by Patches/StartOfRoundPatch.cs)
-//   Features/         the drop-all and auto-sell coroutines
+//   Features/         the drop-all and auto-place coroutines
 //   Patches/          every Harmony patch, one class each
 [BepInAutoPlugin]
 [BepInDependency("FlipMods.ReservedItemSlotCore", BepInDependency.DependencyFlags.SoftDependency)]
@@ -23,7 +23,7 @@ public partial class Plugin : BaseUnityPlugin
         ItemBlacklist.Initialize(Config);
         InputConfiguration.Initialize(Config);
         GrabConfiguration.Initialize(Config);
-        SellConfiguration.Initialize(Config);
+        PlaceConfiguration.Initialize(Config);
 
         // Every patch class carries its own [HarmonyPatch] target, so scanning the assembly
         // finds them all (see CLAUDE.md gotcha #1 for why this must not be PatchAll()).

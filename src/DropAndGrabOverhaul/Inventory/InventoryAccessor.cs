@@ -4,7 +4,7 @@ using GameNetcodeStuff;
 
 namespace DropAndGrabOverhaul.Inventory;
 
-// The one place that enumerates a player's inventory; drop-all and auto-sell go through here
+// The one place that enumerates a player's inventory; drop-all and auto-place go through here
 // instead of indexing player.ItemSlots, so inventory-mod integrations only touch this class.
 internal static class InventoryAccessor
 {
