@@ -116,9 +116,11 @@ internal sealed class UpdateRunner : MonoBehaviour
             ShipBuildModeManager.Instance.CancelBuildMode();
 
         // Looking at the company counter: the drop key places items on it instead of dropping.
+        // Only a fresh press starts auto-place. Testing the held state instead would restart the
+        // routine every frame the key stays down once the previous run finished.
         if (IsHoveringDesk(player, out DepositItemsDesk? desk))
         {
-            if (!routineGate.IsRunning && InputHandler.IsDropKeyPressed())
+            if (!routineGate.IsRunning && InputHandler.WasDropKeyPressedThisFrame())
                 routineGate.Start(this, AutoPlaceRoutine.Run(player, desk));
 
             InputHandler.ResetDropKeyTracking();

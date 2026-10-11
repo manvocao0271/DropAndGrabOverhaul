@@ -8,7 +8,7 @@ A Lethal Company mod that overhauls item dropping, grabbing, and placing items o
 * **Force drop** — hold the drop key to drop everything in your hotbar, ignoring the blacklist
 * **Reserved slot drop** *(optional, requires [ReservedItemSlotCore](https://thunderstore.io/c/lethal-company/p/FlipMods/ReservedItemSlotCore/))* — keep holding a little longer to also drop the items in your reserved item slots
 * **Drop blacklist** — configurable list of items that are never dropped by double-tap/force-drop
-* **Auto-place at the company desk** — press the drop key once while looking at the counter to automatically place all eligible scrap from your main hotbar on it, one at a time
+* **Auto-place at the company desk** — press the drop key once while looking at the counter to automatically place all eligible scrap from your main hotbar on it, one at a time (always on, there is no setting for it)
 * **Place blacklist** — configurable list of items that auto-place should skip, separate from the drop blacklist
 * **Configurable grab delay** — lower the delay between picking up items (down to 0.01s) so you can grab in rapid succession
 
@@ -35,7 +35,7 @@ If [ReservedItemSlotCore](https://thunderstore.io/c/lethal-company/p/FlipMods/Re
 
 ### Auto-Place
 
-While looking at the company desk's counter, press the drop key once to put all eligible scrap items from your main hotbar onto the counter. Items in [ReservedItemSlotCore](https://thunderstore.io/c/lethal-company/p/FlipMods/ReservedItemSlotCore/) reserved slots are never placed. The mod only places the items; the Company takes them off the counter and pays for them as usual.
+While looking at the company desk's counter, press the drop key once to put all eligible scrap items from your main hotbar onto the counter. It always starts from a fresh key press: holding the key does not repeat it, so let go and press again to place more. Items in [ReservedItemSlotCore](https://thunderstore.io/c/lethal-company/p/FlipMods/ReservedItemSlotCore/) reserved slots are never placed. The mod only places the items; the Company takes them off the counter and pays for them as usual.
 
 ## Configuration
 
@@ -113,6 +113,10 @@ artifacts/bin/DropAndGrabOverhaul/
 `dotnet build -c Release` also builds the Thunderstore package into `artifacts/thunderstore/`. The package contains only the mod: `manifest.json`, `icon.png`, `README.md` (from `THUNDERSTORE.md`), `CHANGELOG.md`, `LICENSE` and `plugins/bobabulkerENTERPRISE.DropAndGrabOverhaul.dll`. The build fails if the zip holds anything else, or is missing any of those. Add `-p:PublishTS=true` to upload it after that check passes (needs `TCLI_AUTH_TOKEN`).
 
 When releasing, set the same version in `DropAndGrabOverhaul.csproj`, `thunderstore.toml` and a new `CHANGELOG.md` entry.
+
+### Reference sources
+
+`references/` holds decompiled game and mod sources (`vanilla_game_files/`, `reserveditemslotcore_game_files/`) that are only read, never built. It is gitignored, sits outside `src/` and is also excluded from the project's item globs in `Directory.Build.props`, so it can't be compiled or end up in the Thunderstore package.
 
 ## Project Structure
 

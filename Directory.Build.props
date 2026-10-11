@@ -9,6 +9,15 @@
     <SolutionRoot>$(MSBuildThisFileDirectory)</SolutionRoot>
   </PropertyGroup>
 
+  <!--
+    references/ holds decompiled game sources kept for reading only. They live outside src/, so
+    the SDK's default globs never reach them, but exclude them (and build output) explicitly
+    anyway so nothing under them can ever be compiled, embedded or treated as a project item.
+  -->
+  <PropertyGroup>
+    <DefaultItemExcludes>$(DefaultItemExcludes);$(SolutionRoot)references/**;$(SolutionRoot)artifacts/**</DefaultItemExcludes>
+  </PropertyGroup>
+
   <!-- Import our shared user configuration file -->
   <Import
     Project="$(SolutionRoot)Config.Build.user.props"

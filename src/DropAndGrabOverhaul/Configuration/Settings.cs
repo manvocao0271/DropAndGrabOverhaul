@@ -99,20 +99,11 @@ internal static class ItemBlacklist
 
 internal static class PlaceConfiguration
 {
-    private static ConfigEntry<bool> autoPlaceInventory = null!;
     private static ItemNameList placeBlacklist = null!;
 
-    public static bool AutoPlaceInventory => autoPlaceInventory.Value;
-
+    // Auto-place at the company counter is a core feature: there is deliberately no on/off setting.
     public static void Initialize(ConfigFile config)
     {
-        autoPlaceInventory = config.Bind(
-            section: "Place",
-            key: "AutoPlaceInventory",
-            defaultValue: true,
-            description: "Pressing the drop key once while at the company counter will automatically put all eligible scrap in the main hotbar on the counter. The Company then takes it as usual."
-        );
-
         placeBlacklist = new ItemNameList(
             config,
             section: "Place",

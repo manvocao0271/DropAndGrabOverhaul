@@ -227,6 +227,5 @@ artifacts/**/*.zip
 artifacts/**
 Config.Build.user.props
 
-*_game_files
+references/
 CLAUDE.md
-vanilla_game_files
